@@ -22,7 +22,6 @@ function resolveBinary(relativePaths, fallbackCommand) {
 
 const typescriptCli = resolveBinary([
     path.join('node_modules', '.bin', 'tsc'),
-    path.join('..', 'PerformanceTracker', 'api', 'node_modules', '.bin', 'tsc'),
 ], 'npx tsc');
 
 const command = shouldTypecheckOnly
