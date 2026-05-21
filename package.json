@@ -1,0 +1,121 @@
+{
+  "name": "@amerilux/netsuite-wrapper",
+  "version": "0.2.3",
+  "private": false,
+  "description": "Instrumented wrappers around high-value NetSuite modules.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amerilux/netsuite-wrapper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/amerilux/netsuite-wrapper/issues"
+  },
+  "homepage": "https://github.com/amerilux/netsuite-wrapper#readme",
+  "keywords": [
+    "netsuite",
+    "suitescript",
+    "wrapper",
+    "instrumentation",
+    "telemetry",
+    "performance",
+    "amd"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./function-context": {
+      "types": "./dist/function-context.d.ts",
+      "default": "./dist/function-context.js"
+    },
+    "./record": {
+      "types": "./dist/record.d.ts",
+      "default": "./dist/record.js"
+    },
+    "./query": {
+      "types": "./dist/query.d.ts",
+      "default": "./dist/query.js"
+    },
+    "./search": {
+      "types": "./dist/search.d.ts",
+      "default": "./dist/search.js"
+    },
+    "./log": {
+      "types": "./dist/log.d.ts",
+      "default": "./dist/log.js"
+    },
+    "./https": {
+      "types": "./dist/https.d.ts",
+      "default": "./dist/https.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    },
+    "./task": {
+      "types": "./dist/task.d.ts",
+      "default": "./dist/task.js"
+    },
+    "./url": {
+      "types": "./dist/url.d.ts",
+      "default": "./dist/url.js"
+    },
+    "./performance-tracker": {
+      "types": "./dist/performance-tracker.d.ts",
+      "default": "./dist/performance-tracker.js"
+    },
+    "./webpack": {
+      "default": "./builders/webpack.js"
+    },
+    "./rollup": {
+      "default": "./builders/rollup.js"
+    },
+    "./vite": {
+      "default": "./builders/vite.js"
+    },
+    "./tsc": {
+      "default": "./builders/tsc.js"
+    },
+    "./webpack-instrumentation": {
+      "default": "./builders/webpack-instrumentation.js"
+    },
+    "./instrumentation-loader": {
+      "default": "./builders/instrumentation-loader.js"
+    },
+    "./telemetry": {
+      "types": "./dist/telemetry.d.ts",
+      "default": "./dist/telemetry.js"
+    }
+  },
+  "files": [
+    "dist",
+    "amd-runtime",
+    "builders",
+    "cli",
+    "internal"
+  ],
+  "scripts": {
+    "build:amd-runtime": "node scripts/build.js --project tsconfig.amd.json",
+    "rewrite:amd-imports": "node cli/rewrite-amd-imports.js",
+    "build": "node scripts/build.js",
+    "test": "node --test tests/*.test.js",
+    "typecheck": "node scripts/build.js --noEmit",
+    "prepack": "npm run build && npm run build:amd-runtime",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@babel/core": "^7.28.0"
+  },
+  "devDependencies": {
+    "@hitc/netsuite-types": "2025.1.11",
+    "typescript": "5.8.3"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "tag": "latest"
+  }
+}

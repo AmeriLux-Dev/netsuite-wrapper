@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "amd",
+    "target": "es5",
+    "lib": ["es2019"],
+    "declaration": false,
+    "outDir": "amd-runtime"
+  }
+}
