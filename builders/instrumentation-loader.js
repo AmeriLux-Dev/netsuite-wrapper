@@ -1,7 +1,7 @@
 const {
     DEFAULT_INSTRUMENTATION_SOURCE,
     transformNetSuiteWrapperSource,
-} = require('../internal/instrumentation-core');
+} = require('../lib/instrumentation-core');
 
 module.exports = function instrumentationLoader(source, inputSourceMap) {
     if (typeof this.cacheable === 'function') {

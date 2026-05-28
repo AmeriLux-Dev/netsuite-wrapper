@@ -34,10 +34,10 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'ContextType', function () { return getNsRuntime().ContextType; });
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'EnvType', function () { return getNsRuntime().EnvType; });
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'Permission', function () { return getNsRuntime().Permission; });
-    exports.getCurrentScript = (function () { return (0, telemetry_1.runWrappedOperation)(buildRuntimeMetadata('getCurrentScript', 'Get current script runtime context'), function () { return getNsRuntime().getCurrentScript(); }); });
-    exports.getCurrentSession = (function () { return (0, telemetry_1.runWrappedOperation)(buildRuntimeMetadata('getCurrentSession', 'Get current runtime session'), function () { return getNsRuntime().getCurrentSession(); }); });
-    exports.getCurrentUser = (function () { return (0, telemetry_1.runWrappedOperation)(buildRuntimeMetadata('getCurrentUser', 'Get current runtime user'), function () { return getNsRuntime().getCurrentUser(); }); });
-    exports.isFeatureInEffect = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildRuntimeMetadata('isFeatureInEffect', 'Check NetSuite feature flag', {
+    exports.getCurrentScript = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('getCurrentScript', 'Get current script runtime context'); }, function () { return getNsRuntime().getCurrentScript(); }); });
+    exports.getCurrentSession = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('getCurrentSession', 'Get current runtime session'); }, function () { return getNsRuntime().getCurrentSession(); }); });
+    exports.getCurrentUser = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('getCurrentUser', 'Get current runtime user'); }, function () { return getNsRuntime().getCurrentUser(); }); });
+    exports.isFeatureInEffect = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('isFeatureInEffect', 'Check NetSuite feature flag', {
         feature: normalizeText(options.feature),
-    }), function () { return getNsRuntime().isFeatureInEffect(options); }); });
+    }); }, function () { return getNsRuntime().isFeatureInEffect(options); }); });
 });

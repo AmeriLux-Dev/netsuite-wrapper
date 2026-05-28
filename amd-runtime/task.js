@@ -86,7 +86,7 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
     function instrumentTaskInstance(taskInstance, createOptions) {
         if (typeof taskInstance.submit === 'function') {
             var originalSubmit_1 = taskInstance.submit.bind(taskInstance);
-            taskInstance.submit = function () { return (0, telemetry_1.runWrappedOperation)(createTaskSubmitMetadata(createOptions), function () { return originalSubmit_1(); }); };
+            taskInstance.submit = function () { return (0, telemetry_1.runWrappedOperation)(function () { return createTaskSubmitMetadata(createOptions); }, function () { return originalSubmit_1(); }); };
         }
         if (typeof taskInstance.addInboundDependency === 'function') {
             var originalAddInboundDependency_1 = taskInstance.addInboundDependency.bind(taskInstance);
@@ -95,17 +95,17 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
                 for (var _i = 0; _i < arguments.length; _i++) {
                     args[_i] = arguments[_i];
                 }
-                return (0, telemetry_1.runWrappedOperation)(buildTaskMetadata('addInboundDependency', 'Add task inbound dependency', {
+                return (0, telemetry_1.runWrappedOperation)(function () { return buildTaskMetadata('addInboundDependency', 'Add task inbound dependency', {
                     taskType: getOptionValue(createOptions, 'taskType'),
                     dependencyTaskType: getOptionValue(args[0], 'taskType'),
                     scriptId: getOptionValue(args[0], 'scriptId'),
                     deploymentId: getOptionValue(args[0], 'deploymentId'),
                     params: getOptionValue(args[0], 'params'),
-                }), function () { return originalAddInboundDependency_1.apply(void 0, args); });
+                }); }, function () { return originalAddInboundDependency_1.apply(void 0, args); });
             };
         }
         return taskInstance;
     }
-    exports.create = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildTaskMetadata('create', "Create ".concat(normalizeText(getOptionValue(options, 'taskType')) || 'NetSuite', " task"), options), function () { return instrumentTaskInstance(getNsTask().create(options), options); }); });
-    exports.checkStatus = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildTaskMetadata('checkStatus', 'Check NetSuite task status', options), function () { return getNsTask().checkStatus(options); }); });
+    exports.create = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildTaskMetadata('create', "Create ".concat(normalizeText(getOptionValue(options, 'taskType')) || 'NetSuite', " task"), options); }, function () { return instrumentTaskInstance(getNsTask().create(options), options); }); });
+    exports.checkStatus = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildTaskMetadata('checkStatus', 'Check NetSuite task status', options); }, function () { return getNsTask().checkStatus(options); }); });
 });

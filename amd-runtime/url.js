@@ -82,9 +82,9 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
             },
         };
     }
-    exports.format = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildUrlMetadata('format', 'Format NetSuite URL parameters', options), function () { return getNsUrl().format(options); }); });
-    exports.resolveDomain = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildUrlMetadata('resolveDomain', 'Resolve NetSuite domain', options), function () { return getNsUrl().resolveDomain(options); }); });
-    exports.resolveRecord = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildUrlMetadata('resolveRecord', 'Resolve NetSuite record URL', options), function () { return getNsUrl().resolveRecord(options); }); });
-    exports.resolveScript = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildUrlMetadata('resolveScript', 'Resolve NetSuite script URL', options), function () { return getNsUrl().resolveScript(options); }); });
-    exports.resolveTaskLink = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildUrlMetadata('resolveTaskLink', 'Resolve NetSuite task link URL', options), function () { return getNsUrl().resolveTaskLink(options); }); });
+    exports.format = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('format', 'Format NetSuite URL parameters', options); }, function () { return getNsUrl().format(options); }); });
+    exports.resolveDomain = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('resolveDomain', 'Resolve NetSuite domain', options); }, function () { return getNsUrl().resolveDomain(options); }); });
+    exports.resolveRecord = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('resolveRecord', 'Resolve NetSuite record URL', options); }, function () { return getNsUrl().resolveRecord(options); }); });
+    exports.resolveScript = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('resolveScript', 'Resolve NetSuite script URL', options); }, function () { return getNsUrl().resolveScript(options); }); });
+    exports.resolveTaskLink = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('resolveTaskLink', 'Resolve NetSuite task link URL', options); }, function () { return getNsUrl().resolveTaskLink(options); }); });
 });

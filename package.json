@@ -96,7 +96,7 @@
     "amd-runtime",
     "builders",
     "cli",
-    "internal"
+    "lib"
   ],
   "scripts": {
     "build:amd-runtime": "node scripts/build.js --project tsconfig.amd.json",
@@ -115,7 +115,8 @@
     "typescript": "5.8.3"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
+    "registry": "https://registry.npmjs.org/",
+    "access": "public",
     "tag": "latest"
   }
 }

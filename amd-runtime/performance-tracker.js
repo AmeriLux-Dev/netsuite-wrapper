@@ -54,6 +54,7 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         mode: 'custrecord_ptrk_scope_mode',
         expiresAt: 'custrecord_ptrk_scope_expires_at',
     };
+    var deferredSpanQueues = new Map();
     function getNsCache() {
         return require('N/cache');
     }
@@ -688,6 +689,32 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
             getNsLog().error({ title: 'netsuite-wrapper PerformanceTracker telemetry save failed', details: String(error) });
         }
     }
+    function enqueueDeferredSpan(rootExecutionId, span) {
+        var executionKey = normalizeText(rootExecutionId);
+        if (!executionKey) {
+            persistSpan(span);
+            return;
+        }
+        var existingQueue = deferredSpanQueues.get(executionKey);
+        if (existingQueue) {
+            existingQueue.push(span);
+            return;
+        }
+        deferredSpanQueues.set(executionKey, [span]);
+    }
+    function flushDeferredSpans(rootExecutionId) {
+        var executionKey = normalizeText(rootExecutionId);
+        if (!executionKey) {
+            return;
+        }
+        var queuedSpans = deferredSpanQueues.get(executionKey);
+        if (!queuedSpans || queuedSpans.length === 0) {
+            deferredSpanQueues.delete(executionKey);
+            return;
+        }
+        deferredSpanQueues.delete(executionKey);
+        queuedSpans.forEach(function (span) { return persistSpan(span); });
+    }
     function normalizeSinkOptions(optionsOrScopeKey) {
         if (typeof optionsOrScopeKey === 'string') {
             return { defaultScopeKey: optionsOrScopeKey };
@@ -704,6 +731,7 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         var execution = (0, execution_tracking_1.startTrackedScriptExecution)(metadata, startedAt);
         var finish = function (status, detail, summaryOverride) {
             var completedExecution = (0, execution_tracking_1.finishTrackedScriptExecution)(execution.executionId) || execution;
+            flushDeferredSpans(completedExecution.executionId);
             persistSpan(buildRootExecutionSpan(metadata, completedExecution, status, startedAt, new Date(), detail, summaryOverride));
         };
         try {
@@ -744,6 +772,9 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         var defaultScopeKey = normalizeText(options.defaultScopeKey);
         var activeSpans = [];
         return {
+            isActive: function () {
+                return Boolean((0, execution_tracking_1.getActiveTrackedExecutionSnapshot)());
+            },
             runOperation: function (metadata, work) {
                 var activeExecution = (0, execution_tracking_1.getActiveTrackedExecutionSnapshot)();
                 if (!activeExecution) {
@@ -770,30 +801,50 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
                     if (!shouldPersist) {
                         return;
                     }
-                    persistSpan(buildPersistedSpan(metadata, span, activeExecution, (parentSpan === null || parentSpan === void 0 ? void 0 : parentSpan.executionId) || normalizeText(activeExecution.executionId), scopeKey, status, startedAt, new Date(), detail, summaryOverride));
+                    enqueueDeferredSpan(activeExecution.executionId, buildPersistedSpan(metadata, span, activeExecution, (parentSpan === null || parentSpan === void 0 ? void 0 : parentSpan.executionId) || normalizeText(activeExecution.executionId), scopeKey, status, startedAt, new Date(), detail, summaryOverride));
                 };
                 try {
                     var result = work();
                     if (isPromiseLike(result)) {
                         return result.then(function (value) {
-                            var successDetail = enrichSuccessDetail(metadata, value);
-                            var successSummary = buildSuccessSummary(metadata, successDetail);
-                            finish('SUCCESS', successDetail, successSummary);
+                            if (shouldPersist) {
+                                var successDetail = enrichSuccessDetail(metadata, value);
+                                var successSummary = buildSuccessSummary(metadata, successDetail);
+                                finish('SUCCESS', successDetail, successSummary);
+                            }
+                            else {
+                                finish('SUCCESS', null, normalizeText(metadata.summary));
+                            }
                             return value;
                         }, function (error) {
                             var errorObject = error;
-                            finish('ERROR', __assign(__assign({}, (metadata.detail || {})), { errorName: normalizeText(errorObject.name), message: normalizeText(errorObject.message), stack: normalizeText(errorObject.stack) }), normalizeText(errorObject.message) || normalizeText(metadata.summary));
+                            if (shouldPersist) {
+                                finish('ERROR', __assign(__assign({}, (metadata.detail || {})), { errorName: normalizeText(errorObject.name), message: normalizeText(errorObject.message), stack: normalizeText(errorObject.stack) }), normalizeText(errorObject.message) || normalizeText(metadata.summary));
+                            }
+                            else {
+                                finish('ERROR', null, normalizeText(errorObject.message) || normalizeText(metadata.summary));
+                            }
                             throw error;
                         });
                     }
-                    var successDetail = enrichSuccessDetail(metadata, result);
-                    var successSummary = buildSuccessSummary(metadata, successDetail);
-                    finish('SUCCESS', successDetail, successSummary);
+                    if (shouldPersist) {
+                        var successDetail = enrichSuccessDetail(metadata, result);
+                        var successSummary = buildSuccessSummary(metadata, successDetail);
+                        finish('SUCCESS', successDetail, successSummary);
+                    }
+                    else {
+                        finish('SUCCESS', null, normalizeText(metadata.summary));
+                    }
                     return result;
                 }
                 catch (error) {
                     var errorObject = error;
-                    finish('ERROR', __assign(__assign({}, (metadata.detail || {})), { errorName: normalizeText(errorObject.name), message: normalizeText(errorObject.message), stack: normalizeText(errorObject.stack) }), normalizeText(errorObject.message) || normalizeText(metadata.summary));
+                    if (shouldPersist) {
+                        finish('ERROR', __assign(__assign({}, (metadata.detail || {})), { errorName: normalizeText(errorObject.name), message: normalizeText(errorObject.message), stack: normalizeText(errorObject.stack) }), normalizeText(errorObject.message) || normalizeText(metadata.summary));
+                    }
+                    else {
+                        finish('ERROR', null, normalizeText(errorObject.message) || normalizeText(metadata.summary));
+                    }
                     throw error;
                 }
             },

@@ -16,8 +16,8 @@ const legacyRollup = require('../rollup-plugin');
 const legacyTsc = require('../tsc-plugin');
 const legacyWebpack = require('../webpack-plugin');
 const { rewriteNetSuiteWrapperTscOutput } = require('../builders/tsc');
-const { loadNetSuiteWrapperConfig } = require('../internal/build-support');
-const { transformNetSuiteWrapperSource } = require('../internal/instrumentation-core');
+const { loadNetSuiteWrapperConfig } = require('../lib/build-support');
+const { transformNetSuiteWrapperSource } = require('../lib/instrumentation-core');
 
 function createOptions(extraOptions = {}) {
     return {

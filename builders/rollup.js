@@ -6,10 +6,10 @@ const {
     createWrapperModuleRequest,
     isWrapperContext,
     loadNetSuiteWrapperConfig,
-} = require('../internal/build-support');
+} = require('../lib/build-support');
 const {
     transformNetSuiteWrapperSource,
-} = require('../internal/instrumentation-core');
+} = require('../lib/instrumentation-core');
 
 const DEFAULT_INSTRUMENTATION_SOURCE = 'rollup-babel-auto';
 const AUTO_BOOTSTRAP_ID = 'virtual:netsuite-wrapper:auto-bootstrap';

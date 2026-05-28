@@ -81,8 +81,8 @@ define(["require", "exports", "./telemetry", "./function-wrapper"], function (re
     function instrumentQueryPagedData(pagedData, queryInstance) {
         if (typeof pagedData.fetch === 'function') {
             var originalFetch_1 = pagedData.fetch.bind(pagedData);
-            var wrappedFetch = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildQueryExecutionMetadata('fetchPage', queryInstance), function () { return originalFetch_1(options); }); }, 'promise' in originalFetch_1 && typeof originalFetch_1.promise === 'function'
-                ? function (options) { return (0, telemetry_1.runWrappedOperation)(buildQueryExecutionMetadata('fetchPage', queryInstance), function () { return originalFetch_1.promise(options); }); }
+            var wrappedFetch = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('fetchPage', queryInstance); }, function () { return originalFetch_1(options); }); }, 'promise' in originalFetch_1 && typeof originalFetch_1.promise === 'function'
+                ? function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('fetchPage', queryInstance); }, function () { return originalFetch_1.promise(options); }); }
                 : undefined);
             pagedData.fetch = wrappedFetch;
         }
@@ -91,21 +91,21 @@ define(["require", "exports", "./telemetry", "./function-wrapper"], function (re
     function instrumentQueryInstance(queryInstance) {
         if (typeof queryInstance.run === 'function') {
             var originalRun_1 = queryInstance.run.bind(queryInstance);
-            var wrappedRun = (0, function_wrapper_1.wrapFunction)(function () { return (0, telemetry_1.runWrappedOperation)(buildQueryExecutionMetadata('run', queryInstance), function () { return originalRun_1(); }); }, 'promise' in originalRun_1 && typeof originalRun_1.promise === 'function'
-                ? function () { return (0, telemetry_1.runWrappedOperation)(buildQueryExecutionMetadata('run', queryInstance), function () { return originalRun_1.promise(); }); }
+            var wrappedRun = (0, function_wrapper_1.wrapFunction)(function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('run', queryInstance); }, function () { return originalRun_1(); }); }, 'promise' in originalRun_1 && typeof originalRun_1.promise === 'function'
+                ? function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('run', queryInstance); }, function () { return originalRun_1.promise(); }); }
                 : undefined);
             queryInstance.run = wrappedRun;
         }
         if (typeof queryInstance.runPaged === 'function') {
             var originalRunPaged_1 = queryInstance.runPaged.bind(queryInstance);
-            var wrappedRunPaged = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildQueryExecutionMetadata('runPaged', queryInstance, options), function () { return instrumentQueryPagedData(originalRunPaged_1(options), queryInstance); }); }, 'promise' in originalRunPaged_1 && typeof originalRunPaged_1.promise === 'function'
-                ? function (options) { return (0, telemetry_1.runWrappedOperation)(buildQueryExecutionMetadata('runPaged', queryInstance, options), function () { return originalRunPaged_1.promise(options).then(function (pagedData) { return instrumentQueryPagedData(pagedData, queryInstance); }); }); }
+            var wrappedRunPaged = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('runPaged', queryInstance, options); }, function () { return instrumentQueryPagedData(originalRunPaged_1(options), queryInstance); }); }, 'promise' in originalRunPaged_1 && typeof originalRunPaged_1.promise === 'function'
+                ? function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('runPaged', queryInstance, options); }, function () { return originalRunPaged_1.promise(options).then(function (pagedData) { return instrumentQueryPagedData(pagedData, queryInstance); }); }); }
                 : undefined);
             queryInstance.runPaged = wrappedRunPaged;
         }
         return queryInstance;
     }
-    exports.create = (function (options) { return (0, telemetry_1.runWrappedOperation)(buildCreateMetadata(options), function () { return instrumentQueryInstance(getNsQuery().create(options)); }); });
-    exports.runSuiteQL = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildRunSuiteQlMetadata(options), function () { return getNsQuery().runSuiteQL(options); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(buildRunSuiteQlMetadata(options), function () { return getNsQuery().runSuiteQL.promise(options); }); });
-    exports.load = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildLoadMetadata(options), function () { return instrumentQueryInstance(getNsQuery().load(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(buildLoadMetadata(options), function () { return getNsQuery().load.promise(options).then(function (queryInstance) { return instrumentQueryInstance(queryInstance); }); }); });
+    exports.create = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildCreateMetadata(options); }, function () { return instrumentQueryInstance(getNsQuery().create(options)); }); });
+    exports.runSuiteQL = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRunSuiteQlMetadata(options); }, function () { return getNsQuery().runSuiteQL(options); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRunSuiteQlMetadata(options); }, function () { return getNsQuery().runSuiteQL.promise(options); }); });
+    exports.load = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return instrumentQueryInstance(getNsQuery().load(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return getNsQuery().load.promise(options).then(function (queryInstance) { return instrumentQueryInstance(queryInstance); }); }); });
 });

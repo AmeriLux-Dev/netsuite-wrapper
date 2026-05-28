@@ -95,14 +95,14 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     function instrumentSearchResultSet(resultSet, searchInstance) {
         if (typeof resultSet.getRange === 'function') {
             var originalGetRange_1 = resultSet.getRange.bind(resultSet);
-            var wrappedGetRange = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildSearchExecutionMetadata('getRange', searchInstance, {
+            var wrappedGetRange = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('getRange', searchInstance, {
                 start: normalizeText(options === null || options === void 0 ? void 0 : options.start),
                 end: normalizeText(options === null || options === void 0 ? void 0 : options.end),
-            }), function () { return originalGetRange_1(options); }); }, 'promise' in originalGetRange_1 && typeof originalGetRange_1.promise === 'function'
-                ? function (options) { return (0, telemetry_1.runWrappedOperation)(buildSearchExecutionMetadata('getRange', searchInstance, {
+            }); }, function () { return originalGetRange_1(options); }); }, 'promise' in originalGetRange_1 && typeof originalGetRange_1.promise === 'function'
+                ? function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('getRange', searchInstance, {
                     start: normalizeText(options === null || options === void 0 ? void 0 : options.start),
                     end: normalizeText(options === null || options === void 0 ? void 0 : options.end),
-                }), function () { return originalGetRange_1.promise(options); }); }
+                }); }, function () { return originalGetRange_1.promise(options); }); }
                 : undefined);
             resultSet.getRange = wrappedGetRange;
         }
@@ -111,12 +111,12 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     function instrumentSearchPagedData(pagedData, searchInstance) {
         if (typeof pagedData.fetch === 'function') {
             var originalFetch_1 = pagedData.fetch.bind(pagedData);
-            var wrappedFetch = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildSearchExecutionMetadata('fetchPage', searchInstance, {
+            var wrappedFetch = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('fetchPage', searchInstance, {
                 index: normalizeText(options === null || options === void 0 ? void 0 : options.index),
-            }), function () { return originalFetch_1(options); }); }, 'promise' in originalFetch_1 && typeof originalFetch_1.promise === 'function'
-                ? function (options) { return (0, telemetry_1.runWrappedOperation)(buildSearchExecutionMetadata('fetchPage', searchInstance, {
+            }); }, function () { return originalFetch_1(options); }); }, 'promise' in originalFetch_1 && typeof originalFetch_1.promise === 'function'
+                ? function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('fetchPage', searchInstance, {
                     index: normalizeText(options === null || options === void 0 ? void 0 : options.index),
-                }), function () { return originalFetch_1.promise(options); }); }
+                }); }, function () { return originalFetch_1.promise(options); }); }
                 : undefined);
             pagedData.fetch = wrappedFetch;
         }
@@ -125,22 +125,22 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     function instrumentSearchInstance(searchInstance) {
         if (typeof searchInstance.run === 'function') {
             var originalRun_1 = searchInstance.run.bind(searchInstance);
-            searchInstance.run = (function () { return (0, telemetry_1.runWrappedOperation)(buildSearchExecutionMetadata('run', searchInstance), function () { return instrumentSearchResultSet(originalRun_1(), searchInstance); }); });
+            searchInstance.run = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('run', searchInstance); }, function () { return instrumentSearchResultSet(originalRun_1(), searchInstance); }); });
         }
         if (typeof searchInstance.runPaged === 'function') {
             var originalRunPaged_1 = searchInstance.runPaged.bind(searchInstance);
-            var wrappedRunPaged = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildSearchExecutionMetadata('runPaged', searchInstance, {
+            var wrappedRunPaged = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('runPaged', searchInstance, {
                 pageSize: normalizeText(options === null || options === void 0 ? void 0 : options.pageSize),
-            }), function () { return instrumentSearchPagedData(originalRunPaged_1(options), searchInstance); }); }, 'promise' in originalRunPaged_1 && typeof originalRunPaged_1.promise === 'function'
-                ? function (options) { return (0, telemetry_1.runWrappedOperation)(buildSearchExecutionMetadata('runPaged', searchInstance, {
+            }); }, function () { return instrumentSearchPagedData(originalRunPaged_1(options), searchInstance); }); }, 'promise' in originalRunPaged_1 && typeof originalRunPaged_1.promise === 'function'
+                ? function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('runPaged', searchInstance, {
                     pageSize: normalizeText(options === null || options === void 0 ? void 0 : options.pageSize),
-                }), function () { return originalRunPaged_1.promise(options).then(function (pagedData) { return instrumentSearchPagedData(pagedData, searchInstance); }); }); }
+                }); }, function () { return originalRunPaged_1.promise(options).then(function (pagedData) { return instrumentSearchPagedData(pagedData, searchInstance); }); }); }
                 : undefined);
             searchInstance.runPaged = wrappedRunPaged;
         }
         return searchInstance;
     }
-    exports.create = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildCreateMetadata(options), function () { return instrumentSearchInstance(getNsSearch().create(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(buildCreateMetadata(options), function () { return getNsSearch().create.promise(options).then(function (searchInstance) { return instrumentSearchInstance(searchInstance); }); }); });
-    exports.load = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildLoadMetadata(options), function () { return instrumentSearchInstance(getNsSearch().load(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(buildLoadMetadata(options), function () { return getNsSearch().load.promise(options).then(function (searchInstance) { return instrumentSearchInstance(searchInstance); }); }); });
-    exports.lookupFields = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(buildLookupFieldsMetadata(options), function () { return getNsSearch().lookupFields(options); }); }, (function (options) { return (0, telemetry_1.runWrappedOperation)(buildLookupFieldsMetadata(options), function () { return getNsSearch().lookupFields.promise(options); }); }));
+    exports.create = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildCreateMetadata(options); }, function () { return instrumentSearchInstance(getNsSearch().create(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildCreateMetadata(options); }, function () { return getNsSearch().create.promise(options).then(function (searchInstance) { return instrumentSearchInstance(searchInstance); }); }); });
+    exports.load = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return instrumentSearchInstance(getNsSearch().load(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return getNsSearch().load.promise(options).then(function (searchInstance) { return instrumentSearchInstance(searchInstance); }); }); });
+    exports.lookupFields = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLookupFieldsMetadata(options); }, function () { return getNsSearch().lookupFields(options); }); }, (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLookupFieldsMetadata(options); }, function () { return getNsSearch().lookupFields.promise(options); }); }));
 });

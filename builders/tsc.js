@@ -3,9 +3,9 @@ const path = require('path');
 const {
     DEFAULT_PACKAGE_NAME,
     loadNetSuiteWrapperConfig,
-} = require('../internal/build-support');
-const { transformNetSuiteWrapperSource } = require('../internal/instrumentation-core');
-const { listOverrideSpecifiers } = require('../internal/override-modules');
+} = require('../lib/build-support');
+const { transformNetSuiteWrapperSource } = require('../lib/instrumentation-core');
+const { listOverrideSpecifiers } = require('../lib/override-modules');
 
 const DEFAULT_RUNTIME_DIR = path.join(__dirname, '..', 'amd-runtime');
 const DEFAULT_WRAPPER_SUBDIR = 'netsuite-wrapper';

@@ -7,7 +7,7 @@ const {
     isWrapperContext,
     loadNetSuiteWrapperConfig,
     prependUniqueModules,
-} = require('../internal/build-support');
+} = require('../lib/build-support');
 
 const DEFAULT_INSTRUMENTATION_SOURCE = 'webpack-babel-auto';
 const FUNCTION_CONTEXT_MODULE_PATH = path.join(__dirname, '..', 'dist', 'function-context.js');
@@ -19,7 +19,7 @@ function loadWebpack() {
     }));
 }
 
-const INTERNAL_BOOTSTRAP_MODULE = path.join(__dirname, '..', 'internal', 'webpack-bootstrap.js');
+const INTERNAL_BOOTSTRAP_MODULE = path.join(__dirname, '..', 'lib', 'webpack-bootstrap.js');
 
 function normalizeRules(rules) {
     if (!rules) {
