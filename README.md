@@ -141,7 +141,7 @@ First-time setup (one time only):
 
 1. Publish manually once with `npm login` + `npm publish` so the package exists on npmjs.org.
 2. On npmjs.com, open the package settings → **Trusted Publisher** → add a GitHub Actions publisher:
-   - Organization: `amerilux`
+   - Organization: `AmeriLux-Dev`
    - Repository: `netsuite-wrapper`
    - Workflow filename: `publish.yml`
 

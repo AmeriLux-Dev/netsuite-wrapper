@@ -6,12 +6,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/amerilux/netsuite-wrapper.git"
+    "url": "git+https://github.com/AmeriLux-Dev/netsuite-wrapper.git"
   },
   "bugs": {
-    "url": "https://github.com/amerilux/netsuite-wrapper/issues"
+    "url": "https://github.com/AmeriLux-Dev/netsuite-wrapper/issues"
   },
-  "homepage": "https://github.com/amerilux/netsuite-wrapper#readme",
+  "homepage": "https://github.com/AmeriLux-Dev/netsuite-wrapper#readme",
   "keywords": [
     "netsuite",
     "suitescript",
