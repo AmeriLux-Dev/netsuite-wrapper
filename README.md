@@ -124,29 +124,6 @@ Then install and build the consumer normally. This validates that:
 
 When ready to move off the local test, replace the `file:` dependency with the published npm version.
 
-## Releasing (maintainers)
-
-Releases publish to the public npm registry via GitHub Actions on a tag push. Authentication uses npm Trusted Publishing (OIDC) — no `NPM_TOKEN` secret is stored.
-
-To cut a release:
-
-1. Bump `version` in `package.json`.
-2. Run `npm run typecheck` and `npm run pack:dry-run` locally.
-3. Commit and push.
-4. Tag with `v<version>` and push the tag.
-
-The workflow in [.github/workflows/publish.yml](./.github/workflows/publish.yml) verifies the tag matches `package.json`, then runs `npm publish` with provenance.
-
-First-time setup (one time only):
-
-1. Publish manually once with `npm login` + `npm publish` so the package exists on npmjs.org.
-2. On npmjs.com, open the package settings → **Trusted Publisher** → add a GitHub Actions publisher:
-   - Organization: `AmeriLux-Dev`
-   - Repository: `netsuite-wrapper`
-   - Workflow filename: `publish.yml`
-
-After that, every `v*.*.*` tag publishes automatically.
-
 ## Compatibility boundary
 
 The wrapper package is intentionally generic.

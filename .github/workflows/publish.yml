@@ -1,10 +1,8 @@
-name: Publish package
+name: Publish to npm
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  release:
+    types: [published]
 
 jobs:
   publish:
@@ -13,37 +11,19 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-          scope: '@amerilux'
 
-      - name: Upgrade npm for Trusted Publishing
-        run: npm install -g npm@latest
+      - run: npm install -g npm@latest
 
-      - name: Verify tag matches package.json version
-        shell: bash
-        run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag v$TAG_VERSION does not match package.json version $PKG_VERSION"
-            exit 1
-          fi
+      - run: npm ci
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm run build
 
-      - name: Typecheck
-        run: npm run typecheck
+      - run: npm test
 
-      - name: Pack dry-run
-        run: npm run pack:dry-run
-
-      - name: Publish to npm
-        run: npm publish
+      - run: npm publish --access public --provenance

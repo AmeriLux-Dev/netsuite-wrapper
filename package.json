@@ -105,7 +105,8 @@
     "test": "node --test tests/*.test.js",
     "typecheck": "node scripts/build.js --noEmit",
     "prepack": "npm run build && npm run build:amd-runtime",
-    "pack:dry-run": "npm pack --dry-run"
+    "pack:dry-run": "npm pack --dry-run",
+    "packAndPublish": "npm run typecheck && npm test && npm publish --access public"
   },
   "dependencies": {
     "@babel/core": "^7.28.0"
