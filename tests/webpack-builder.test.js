@@ -137,6 +137,20 @@ test('keeps the tsc bootstrap path on the local runtime when packageName is cust
     fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test('webpack bootstrap telemetry require resolves to a real file', () => {
+    const bootstrapPath = path.join(__dirname, '..', 'lib', 'webpack-bootstrap.js');
+    const bootstrapSource = fs.readFileSync(bootstrapPath, 'utf8');
+    const match = bootstrapSource.match(/require\((['"])(\.[^'"]*telemetry\.js)\1\)/);
+
+    assert.ok(match, 'expected webpack-bootstrap.js to require telemetry.js by relative path');
+
+    const resolvedTelemetryPath = path.resolve(path.dirname(bootstrapPath), match[2]);
+    assert.ok(
+        fs.existsSync(resolvedTelemetryPath),
+        `telemetry require resolves to a missing file: ${resolvedTelemetryPath}`,
+    );
+});
+
 test('legacy root entrypoints re-export the builder implementations', () => {
     assert.equal(legacyRollup, builderRollup);
     assert.equal(legacyWebpack, builderWebpack);
