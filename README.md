@@ -108,6 +108,18 @@ module.exports = {
 };
 ```
 
+### Trace logging
+
+The wrapper can emit internal `[NSW_TRACE]` diagnostics describing how each log call is routed (active execution, function context, chunking). It is **off by default**. Turn it on through `netsuite-wrapper.config.js`:
+
+```js
+module.exports = {
+    traceLog: true,
+};
+```
+
+When enabled, the builder injects a small bootstrap that calls `setTraceLogEnabled(true)` at runtime, so trace logging is active for the deployed script without any code change. You can also toggle it directly at runtime via `log.setTraceLogEnabled(true)` / `log.isTraceLogEnabled()` from `@amerilux/netsuite-wrapper/log`.
+
 ## Local consumer test flow
 
 You can test the package from a consumer project with a local file dependency before publishing:

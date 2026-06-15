@@ -1,6 +1,8 @@
 define(["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.isTraceLogEnabled = isTraceLogEnabled;
+    exports.setTraceLogEnabled = setTraceLogEnabled;
     exports.debug = debug;
     exports.audit = audit;
     exports.error = error;
@@ -10,7 +12,17 @@ define(["require", "exports"], function (require, exports) {
     function getNsLog() {
         return require('N/log');
     }
+    var traceLogEnabled = false;
+    function isTraceLogEnabled() {
+        return traceLogEnabled;
+    }
+    function setTraceLogEnabled(enabled) {
+        traceLogEnabled = enabled === true;
+    }
     function emitTraceLog(stage, details) {
+        if (!traceLogEnabled) {
+            return;
+        }
         try {
             getNsLog().audit({
                 title: "[NSW_TRACE] ".concat(stage),

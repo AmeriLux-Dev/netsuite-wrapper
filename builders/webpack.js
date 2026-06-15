@@ -20,6 +20,7 @@ function loadWebpack() {
 }
 
 const INTERNAL_BOOTSTRAP_MODULE = path.join(__dirname, '..', 'lib', 'webpack-bootstrap.js');
+const INTERNAL_TRACE_LOG_BOOTSTRAP_MODULE = path.join(__dirname, '..', 'lib', 'trace-log-bootstrap.js');
 
 function normalizeRules(rules) {
     if (!rules) {
@@ -75,6 +76,10 @@ function createNetSuiteWrapperInstrumentationRule(options = {}, config = {}) {
 function createNetSuiteWrapperWebpackEntries(entries, options = {}) {
     const resolvedOptions = loadNetSuiteWrapperConfig(options);
     const bootstrapModules = [];
+
+    if (resolvedOptions.traceLog) {
+        bootstrapModules.push(INTERNAL_TRACE_LOG_BOOTSTRAP_MODULE);
+    }
 
     if (resolvedOptions.telemetryBootstrap) {
         bootstrapModules.push(INTERNAL_BOOTSTRAP_MODULE);

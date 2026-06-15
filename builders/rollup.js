@@ -17,6 +17,9 @@ const TELEMETRY_MODULE_ID = 'virtual:netsuite-wrapper:telemetry-module';
 const SINK_MODULE_ID = 'virtual:netsuite-wrapper:sink-module';
 const BOOTSTRAP_MODULE_PREFIX = 'virtual:netsuite-wrapper:bootstrap-module:';
 const RESOLVED_AUTO_BOOTSTRAP_ID = '\0netsuite-wrapper:auto-bootstrap';
+const TRACE_LOG_BOOTSTRAP_ID = 'virtual:netsuite-wrapper:trace-log-bootstrap';
+const RESOLVED_TRACE_LOG_BOOTSTRAP_ID = '\0netsuite-wrapper:trace-log-bootstrap';
+const LOG_MODULE_ID = 'virtual:netsuite-wrapper:log-module';
 
 function normalizeModuleId(id) {
     return typeof id === 'string' ? id.replace(/[?#].*$/, '') : '';
@@ -125,6 +128,10 @@ function shouldInstrument(id, options) {
 
 function createBootstrapImportLines(resolvedOptions) {
     const imports = [];
+    if (resolvedOptions.traceLog) {
+        imports.push(`import ${JSON.stringify(TRACE_LOG_BOOTSTRAP_ID)};`);
+    }
+
     if (resolvedOptions.telemetryBootstrap) {
         imports.push(`import ${JSON.stringify(AUTO_BOOTSTRAP_ID)};`);
     }
@@ -149,6 +156,14 @@ function prependEntryImports(code, importLines) {
     }
 
     return `${missingImports.join('\n')}\n${code}`;
+}
+
+function createTraceLogBootstrapModuleSource() {
+    return [
+        `import { setTraceLogEnabled } from ${JSON.stringify(LOG_MODULE_ID)};`,
+        'setTraceLogEnabled(true);',
+        'export {};',
+    ].join('\n');
 }
 
 function createAutoBootstrapModuleSource(resolvedOptions) {
@@ -204,8 +219,19 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
                 return RESOLVED_AUTO_BOOTSTRAP_ID;
             }
 
+            if (source === TRACE_LOG_BOOTSTRAP_ID) {
+                return RESOLVED_TRACE_LOG_BOOTSTRAP_ID;
+            }
+
             if (source === TELEMETRY_MODULE_ID) {
                 return createWrapperModuleRequest('telemetry', {
+                    packageName,
+                    runtimeDir,
+                });
+            }
+
+            if (source === LOG_MODULE_ID) {
+                return createWrapperModuleRequest('log', {
                     packageName,
                     runtimeDir,
                 });
@@ -239,6 +265,10 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
             };
         },
         load(id) {
+            if (id === RESOLVED_TRACE_LOG_BOOTSTRAP_ID) {
+                return createTraceLogBootstrapModuleSource();
+            }
+
             if (id === RESOLVED_AUTO_BOOTSTRAP_ID) {
                 return createAutoBootstrapModuleSource(resolvedOptions);
             }

@@ -27,7 +27,21 @@ function getNsLog(): typeof import('N/log') {
     return require<typeof import('N/log')>('N/log');
 }
 
+let traceLogEnabled = false;
+
+export function isTraceLogEnabled(): boolean {
+    return traceLogEnabled;
+}
+
+export function setTraceLogEnabled(enabled: boolean): void {
+    traceLogEnabled = enabled === true;
+}
+
 function emitTraceLog(stage: string, details: unknown): void {
+    if (!traceLogEnabled) {
+        return;
+    }
+
     try {
         getNsLog().audit({
             title: `[NSW_TRACE] ${stage}`,
