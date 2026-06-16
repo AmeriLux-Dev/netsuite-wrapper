@@ -163,6 +163,32 @@ test('writes a tsc trace-log bootstrap that enables tracing when trace logging i
     fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test('writes a tsc chunk-log bootstrap that sets the mode when chunk logging is not group', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-chunk-'));
+    const outDir = path.join(tempRoot, 'dist');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'log.js'), 'define([], function () { return { setChunkLogMode: function () {} }; });');
+    fs.writeFileSync(path.join(outDir, 'index.js'), 'define([], function () { function main() { return 1; } return { main: main }; });');
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+        telemetryBootstrap: false,
+        chunkLogging: 'silent',
+        instrumentation: false,
+    });
+
+    const bootstrapFile = path.join(outDir, 'netsuite-wrapper', 'chunk-log-bootstrap.js');
+    assert.ok(fs.existsSync(bootstrapFile), 'expected a chunk-log bootstrap file to be written');
+    assert.match(fs.readFileSync(bootstrapFile, 'utf8'), /setChunkLogMode\(['"]silent['"]\)/);
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
 test('webpack bootstrap telemetry require resolves to a real file', () => {
     const bootstrapPath = path.join(__dirname, '..', 'lib', 'webpack-bootstrap.js');
     const bootstrapSource = fs.readFileSync(bootstrapPath, 'utf8');
@@ -183,6 +209,18 @@ test('trace logging defaults to off in the resolved config', () => {
     assert.equal(result.traceLog, false);
 });
 
+test('chunk logging defaults to group in the resolved config', () => {
+    const result = loadNetSuiteWrapperConfig({});
+
+    assert.equal(result.chunkLogging, 'group');
+});
+
+test('resolves valid chunkLogging options and rejects unknown values', () => {
+    assert.equal(loadNetSuiteWrapperConfig({ chunkLogging: 'silent' }).chunkLogging, 'silent');
+    assert.equal(loadNetSuiteWrapperConfig({ chunkLogging: 'off' }).chunkLogging, 'off');
+    assert.equal(loadNetSuiteWrapperConfig({ chunkLogging: 'bogus' }).chunkLogging, 'group');
+});
+
 test('prepends the trace-log bootstrap to webpack entries when trace logging is on', () => {
     const traceBootstrapPath = path.join(__dirname, '..', 'lib', 'trace-log-bootstrap.js');
     const result = createNetSuiteWrapperWebpackEntries('./src/index.ts', {
@@ -191,6 +229,26 @@ test('prepends the trace-log bootstrap to webpack entries when trace logging is 
     });
 
     assert.deepEqual(result, [traceBootstrapPath, './src/index.ts']);
+});
+
+test('prepends the matching chunk-log bootstrap to webpack entries for a non-group mode', () => {
+    const silentBootstrapPath = path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-silent.js');
+    const result = createNetSuiteWrapperWebpackEntries('./src/index.ts', {
+        telemetryBootstrap: false,
+        chunkLogging: 'silent',
+    });
+
+    assert.deepEqual(result, [silentBootstrapPath, './src/index.ts']);
+});
+
+test('prepends the off chunk-log bootstrap to webpack entries when chunk logging is off', () => {
+    const offBootstrapPath = path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-off.js');
+    const result = createNetSuiteWrapperWebpackEntries('./src/index.ts', {
+        telemetryBootstrap: false,
+        chunkLogging: 'off',
+    });
+
+    assert.deepEqual(result, [offBootstrapPath, './src/index.ts']);
 });
 
 test('trace-log bootstrap enables tracing through a real log module file', () => {
@@ -224,6 +282,33 @@ test('rollup prepends a trace-log bootstrap import to entries when trace logging
     assert.match(transformed.code, /import "virtual:netsuite-wrapper:trace-log-bootstrap";/);
 });
 
+test('rollup prepends a chunk-log bootstrap import to entries for a non-group mode', () => {
+    const plugin = builderRollup.createNetSuiteWrapperRollupPlugin({
+        telemetryBootstrap: false,
+        chunkLogging: 'silent',
+        instrumentation: false,
+    });
+    const entryId = path.resolve('./src/index.ts');
+
+    plugin.options({ input: entryId });
+    const transformed = plugin.transform('export const value = 1;', entryId);
+
+    assert.ok(transformed, 'expected the entry to be rewritten with a bootstrap import');
+    assert.match(transformed.code, /import "virtual:netsuite-wrapper:chunk-log-bootstrap";/);
+});
+
+test('rollup resolves and loads a chunk-log bootstrap that sets the mode', () => {
+    const plugin = builderRollup.createNetSuiteWrapperRollupPlugin({
+        telemetryBootstrap: false,
+        chunkLogging: 'off',
+    });
+
+    const resolvedBootstrapId = plugin.resolveId('virtual:netsuite-wrapper:chunk-log-bootstrap');
+    const bootstrapSource = plugin.load(resolvedBootstrapId);
+
+    assert.match(bootstrapSource, /setChunkLogMode\(['"]off['"]\)/);
+});
+
 test('rollup resolves and loads a trace-log bootstrap that enables tracing', () => {
     const plugin = builderRollup.createNetSuiteWrapperRollupPlugin({
         telemetryBootstrap: false,
@@ -238,6 +323,38 @@ test('rollup resolves and loads a trace-log bootstrap that enables tracing', () 
 
     const resolvedLogId = plugin.resolveId('virtual:netsuite-wrapper:log-module');
     assert.equal(resolvedLogId, '@custom/netsuite-wrapper/log');
+});
+
+test('silent chunk-log bootstrap sets silent mode through a real log module file', () => {
+    const bootstrapPath = path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-silent.js');
+    const bootstrapSource = fs.readFileSync(bootstrapPath, 'utf8');
+    const match = bootstrapSource.match(/require\((['"])(\.[^'"]*log\.js)\1\)/);
+
+    assert.ok(match, 'expected chunk-log-bootstrap-silent.js to require log.js by relative path');
+
+    const resolvedLogPath = path.resolve(path.dirname(bootstrapPath), match[2]);
+    assert.ok(
+        fs.existsSync(resolvedLogPath),
+        `log require resolves to a missing file: ${resolvedLogPath}`,
+    );
+
+    assert.match(bootstrapSource, /setChunkLogMode\(['"]silent['"]\)/);
+});
+
+test('off chunk-log bootstrap sets off mode through a real log module file', () => {
+    const bootstrapPath = path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-off.js');
+    const bootstrapSource = fs.readFileSync(bootstrapPath, 'utf8');
+    const match = bootstrapSource.match(/require\((['"])(\.[^'"]*log\.js)\1\)/);
+
+    assert.ok(match, 'expected chunk-log-bootstrap-off.js to require log.js by relative path');
+
+    const resolvedLogPath = path.resolve(path.dirname(bootstrapPath), match[2]);
+    assert.ok(
+        fs.existsSync(resolvedLogPath),
+        `log require resolves to a missing file: ${resolvedLogPath}`,
+    );
+
+    assert.match(bootstrapSource, /setChunkLogMode\(['"]off['"]\)/);
 });
 
 test('legacy root entrypoints re-export the builder implementations', () => {

@@ -21,6 +21,10 @@ function loadWebpack() {
 
 const INTERNAL_BOOTSTRAP_MODULE = path.join(__dirname, '..', 'lib', 'webpack-bootstrap.js');
 const INTERNAL_TRACE_LOG_BOOTSTRAP_MODULE = path.join(__dirname, '..', 'lib', 'trace-log-bootstrap.js');
+const INTERNAL_CHUNK_LOG_BOOTSTRAP_MODULES = {
+    silent: path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-silent.js'),
+    off: path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-off.js'),
+};
 
 function normalizeRules(rules) {
     if (!rules) {
@@ -79,6 +83,11 @@ function createNetSuiteWrapperWebpackEntries(entries, options = {}) {
 
     if (resolvedOptions.traceLog) {
         bootstrapModules.push(INTERNAL_TRACE_LOG_BOOTSTRAP_MODULE);
+    }
+
+    const chunkLogBootstrapModule = INTERNAL_CHUNK_LOG_BOOTSTRAP_MODULES[resolvedOptions.chunkLogging];
+    if (chunkLogBootstrapModule) {
+        bootstrapModules.push(chunkLogBootstrapModule);
     }
 
     if (resolvedOptions.telemetryBootstrap) {
