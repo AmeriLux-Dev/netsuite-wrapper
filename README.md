@@ -108,6 +108,38 @@ module.exports = {
 };
 ```
 
+### Trace logging
+
+The wrapper can emit internal `[NSW_TRACE]` diagnostics describing how each log call is routed (active execution, function context, chunking). It is **off by default**. Turn it on through `netsuite-wrapper.config.js`:
+
+```js
+module.exports = {
+    traceLog: true,
+};
+```
+
+When enabled, the builder injects a small bootstrap that calls `setTraceLogEnabled(true)` at runtime, so trace logging is active for the deployed script without any code change. You can also toggle it directly at runtime via `log.setTraceLogEnabled(true)` / `log.isTraceLogEnabled()` from `@amerilux/netsuite-wrapper/log`.
+
+### Log tracker tags and the message title
+
+Every wrapped `log.*` call records tracker context — the active execution id and function — as tags. As of this release those tags are written to the **start of the message detail** (e.g. `[exec_…] [fn:name::module] your detail`) and the **title is left untouched**. Earlier releases prefixed the title instead; consumers that parsed the tags out of the log title must read them from the detail. Short messages carry the tags inline; chunked messages repeat the tags at the start of every chunk (after the chunk marker) so each chunk stays attributable.
+
+### Chunk logging
+
+NetSuite truncates a log detail at ~4000 characters, so by default the wrapper splits long details into multiple entries, each prefixed with a `[[NSW_CHUNK|…]]` marker that downstream viewers use to re-assemble the original message. Some users would rather not see that marker text. The behaviour is configurable through `netsuite-wrapper.config.js`:
+
+```js
+module.exports = {
+    chunkLogging: 'group', // default
+};
+```
+
+- `group` (default): split long details and add the `[[NSW_CHUNK|…]]` marker so viewers can re-assemble them.
+- `silent`: still split long details across entries, but omit the marker (no extra text; entries are not re-assembled).
+- `off`: never split — emit the detail in a single call and let NetSuite truncate it.
+
+For any non-`group` mode the builder injects a bootstrap that calls `setChunkLogMode('silent' | 'off')` at runtime. You can also set it directly via `log.setChunkLogMode('off')` / `log.getChunkLogMode()` from `@amerilux/netsuite-wrapper/log`.
+
 ## Local consumer test flow
 
 You can test the package from a consumer project with a local file dependency before publishing:

@@ -10,6 +10,8 @@ const { listOverrideSpecifiers } = require('../lib/override-modules');
 const DEFAULT_RUNTIME_DIR = path.join(__dirname, '..', 'amd-runtime');
 const DEFAULT_WRAPPER_SUBDIR = 'netsuite-wrapper';
 const AUTO_BOOTSTRAP_FILE_NAME = 'bootstrap.js';
+const TRACE_LOG_BOOTSTRAP_FILE_NAME = 'trace-log-bootstrap.js';
+const CHUNK_LOG_BOOTSTRAP_FILE_NAME = 'chunk-log-bootstrap.js';
 const DEFAULT_INSTRUMENTATION_SOURCE = 'tsc-amd-auto';
 const overrideModules = new Set(listOverrideSpecifiers(path.resolve(__dirname, '..')));
 
@@ -185,9 +187,37 @@ function createAmdBootstrapSource(sinkModuleId, sinkExportName, scopeKey) {
     ].join('\n');
 }
 
+function createAmdTraceLogBootstrapSource() {
+    return [
+        `define([${JSON.stringify('./log')}], function (logModule) {`,
+        '    logModule.setTraceLogEnabled(true);',
+        '});',
+    ].join('\n');
+}
+
+function createAmdChunkLogBootstrapSource(chunkLogging) {
+    return [
+        `define([${JSON.stringify('./log')}], function (logModule) {`,
+        `    logModule.setChunkLogMode(${JSON.stringify(chunkLogging)});`,
+        '});',
+    ].join('\n');
+}
+
 function resolveBootstrapFiles(resolvedOptions, outDir, wrapperOutputDir, rootDir) {
     const bootstrapFiles = [];
     const defaultPerformanceTrackerModule = `${resolvedOptions.packageName || DEFAULT_PACKAGE_NAME}/performance-tracker`;
+
+    if (resolvedOptions.traceLog) {
+        const traceBootstrapFile = path.join(wrapperOutputDir, TRACE_LOG_BOOTSTRAP_FILE_NAME);
+        fs.writeFileSync(traceBootstrapFile, createAmdTraceLogBootstrapSource(), 'utf8');
+        bootstrapFiles.push(traceBootstrapFile);
+    }
+
+    if (resolvedOptions.chunkLogging !== 'group') {
+        const chunkBootstrapFile = path.join(wrapperOutputDir, CHUNK_LOG_BOOTSTRAP_FILE_NAME);
+        fs.writeFileSync(chunkBootstrapFile, createAmdChunkLogBootstrapSource(resolvedOptions.chunkLogging), 'utf8');
+        bootstrapFiles.push(chunkBootstrapFile);
+    }
 
     if (resolvedOptions.telemetryBootstrap) {
         const bootstrapFile = path.join(wrapperOutputDir, AUTO_BOOTSTRAP_FILE_NAME);
