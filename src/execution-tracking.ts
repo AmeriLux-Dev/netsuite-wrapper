@@ -16,8 +16,8 @@ export interface ObservedFunctionSummary {
     count: number;
     startedAt: number;
     endedAt: number;
-    startUsage: number;
-    endUsage: number;
+    totalDurationMs: number;
+    totalUsage: number;
     parentFunctionName: string;
     parentModulePath: string;
 }
@@ -157,6 +157,8 @@ export function recordFunctionInvocation(context: FunctionCallerContext, started
     const endMs = normalizePositive(endedAt);
     const startUnits = normalizePositive(startUsage);
     const endUnits = normalizePositive(endUsage);
+    const durationMs = endMs > startMs ? endMs - startMs : 0;
+    const usage = startUnits > 0 && endUnits > 0 && startUnits >= endUnits ? startUnits - endUnits : 0;
     const parentFunctionName = normalizeText(parent.parentFunctionName);
     const parentModulePath = normalizeText(parent.parentModulePath);
 
@@ -164,10 +166,10 @@ export function recordFunctionInvocation(context: FunctionCallerContext, started
     const existingSummary = activeExecution.observedFunctions.get(observationKey);
     if (existingSummary) {
         existingSummary.count += 1;
+        existingSummary.totalDurationMs += durationMs;
+        existingSummary.totalUsage += usage;
         existingSummary.startedAt = lowestPositive(existingSummary.startedAt, startMs);
         existingSummary.endedAt = Math.max(existingSummary.endedAt, endMs);
-        existingSummary.startUsage = highestPositive(existingSummary.startUsage, startUnits);
-        existingSummary.endUsage = lowestPositive(existingSummary.endUsage, endUnits);
         return;
     }
 
@@ -178,8 +180,8 @@ export function recordFunctionInvocation(context: FunctionCallerContext, started
         count: 1,
         startedAt: startMs,
         endedAt: endMs,
-        startUsage: startUnits,
-        endUsage: endUnits,
+        totalDurationMs: durationMs,
+        totalUsage: usage,
         parentFunctionName,
         parentModulePath,
     });
@@ -195,16 +197,4 @@ function lowestPositive(existing: number, candidate: number): number {
     }
 
     return Math.min(existing, candidate);
-}
-
-function highestPositive(existing: number, candidate: number): number {
-    if (candidate <= 0) {
-        return existing;
-    }
-
-    if (existing <= 0) {
-        return candidate;
-    }
-
-    return Math.max(existing, candidate);
 }

@@ -20,7 +20,7 @@ function findObserved(functionName) {
     return snapshot.observedFunctions.find((entry) => entry.functionName === functionName);
 }
 
-test('recordFunctionInvocation keeps the earliest start and latest end across invocations', () => {
+test('recordFunctionInvocation sums per-invocation duration and keeps the earliest start / latest end', () => {
     const snapshot = startExecution();
 
     try {
@@ -30,6 +30,7 @@ test('recordFunctionInvocation keeps the earliest start and latest end across in
 
         const observed = findObserved('doWork');
         assert.equal(observed.count, 2);
+        assert.equal(observed.totalDurationMs, 350);
         assert.equal(observed.startedAt, 1000);
         assert.equal(observed.endedAt, 1300);
     } finally {
@@ -37,7 +38,7 @@ test('recordFunctionInvocation keeps the earliest start and latest end across in
     }
 });
 
-test('recordFunctionInvocation keeps the highest start usage and lowest end usage (remaining governance)', () => {
+test('recordFunctionInvocation sums governance consumed (start remaining - end remaining) per invocation', () => {
     const snapshot = startExecution();
 
     try {
@@ -46,8 +47,7 @@ test('recordFunctionInvocation keeps the highest start usage and lowest end usag
         executionTracking.recordFunctionInvocation(context, 1050, 1300, 4800, 4700);
 
         const observed = findObserved('usesGov');
-        assert.equal(observed.startUsage, 5000);
-        assert.equal(observed.endUsage, 4700);
+        assert.equal(observed.totalUsage, 200);
     } finally {
         executionTracking.finishTrackedScriptExecution(snapshot.executionId);
     }

@@ -1,6 +1,6 @@
 {
   "name": "@amerilux/netsuite-wrapper",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": false,
   "description": "Instrumented wrappers around high-value NetSuite modules.",
   "license": "MIT",

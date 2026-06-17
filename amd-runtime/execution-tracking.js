@@ -118,16 +118,18 @@ define(["require", "exports"], function (require, exports) {
         var endMs = normalizePositive(endedAt);
         var startUnits = normalizePositive(startUsage);
         var endUnits = normalizePositive(endUsage);
+        var durationMs = endMs > startMs ? endMs - startMs : 0;
+        var usage = startUnits > 0 && endUnits > 0 && startUnits >= endUnits ? startUnits - endUnits : 0;
         var parentFunctionName = normalizeText(parent.parentFunctionName);
         var parentModulePath = normalizeText(parent.parentModulePath);
         var observationKey = "".concat(parentModulePath, "::").concat(parentFunctionName, ">>").concat(modulePath, "::").concat(functionName);
         var existingSummary = activeExecution.observedFunctions.get(observationKey);
         if (existingSummary) {
             existingSummary.count += 1;
+            existingSummary.totalDurationMs += durationMs;
+            existingSummary.totalUsage += usage;
             existingSummary.startedAt = lowestPositive(existingSummary.startedAt, startMs);
             existingSummary.endedAt = Math.max(existingSummary.endedAt, endMs);
-            existingSummary.startUsage = highestPositive(existingSummary.startUsage, startUnits);
-            existingSummary.endUsage = lowestPositive(existingSummary.endUsage, endUnits);
             return;
         }
         activeExecution.observedFunctions.set(observationKey, {
@@ -137,8 +139,8 @@ define(["require", "exports"], function (require, exports) {
             count: 1,
             startedAt: startMs,
             endedAt: endMs,
-            startUsage: startUnits,
-            endUsage: endUnits,
+            totalDurationMs: durationMs,
+            totalUsage: usage,
             parentFunctionName: parentFunctionName,
             parentModulePath: parentModulePath,
         });
@@ -151,14 +153,5 @@ define(["require", "exports"], function (require, exports) {
             return candidate;
         }
         return Math.min(existing, candidate);
-    }
-    function highestPositive(existing, candidate) {
-        if (candidate <= 0) {
-            return existing;
-        }
-        if (existing <= 0) {
-            return candidate;
-        }
-        return Math.max(existing, candidate);
     }
 });
