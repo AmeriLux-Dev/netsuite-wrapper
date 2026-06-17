@@ -14,6 +14,10 @@ export interface ObservedFunctionSummary {
     modulePath: string;
     filePath: string;
     count: number;
+    startedAt: number;
+    endedAt: number;
+    startUsage: number;
+    endUsage: number;
 }
 
 export interface ActiveTrackedExecutionSnapshot extends TrackedScriptEntryMetadata {
@@ -36,6 +40,10 @@ function normalizeText(value: unknown): string {
     }
 
     return String(value).trim();
+}
+
+function normalizePositive(value: number): number {
+    return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function makeId(prefix: string, startedAt: Date): string {
@@ -122,7 +130,7 @@ export function finishTrackedScriptExecution(executionId?: string): ActiveTracke
     return null;
 }
 
-export function recordFunctionInvocation(context: FunctionCallerContext): void {
+export function recordFunctionInvocation(context: FunctionCallerContext, startedAt = 0, endedAt = 0, startUsage = 0, endUsage = 0): void {
     const activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
     if (!activeExecution) {
         return;
@@ -138,10 +146,19 @@ export function recordFunctionInvocation(context: FunctionCallerContext): void {
         return;
     }
 
+    const startMs = normalizePositive(startedAt);
+    const endMs = normalizePositive(endedAt);
+    const startUnits = normalizePositive(startUsage);
+    const endUnits = normalizePositive(endUsage);
+
     const observationKey = `${modulePath}::${functionName}`;
     const existingSummary = activeExecution.observedFunctions.get(observationKey);
     if (existingSummary) {
         existingSummary.count += 1;
+        existingSummary.startedAt = lowestPositive(existingSummary.startedAt, startMs);
+        existingSummary.endedAt = Math.max(existingSummary.endedAt, endMs);
+        existingSummary.startUsage = highestPositive(existingSummary.startUsage, startUnits);
+        existingSummary.endUsage = lowestPositive(existingSummary.endUsage, endUnits);
         return;
     }
 
@@ -150,5 +167,33 @@ export function recordFunctionInvocation(context: FunctionCallerContext): void {
         modulePath,
         filePath: normalizeText(context.filePath),
         count: 1,
+        startedAt: startMs,
+        endedAt: endMs,
+        startUsage: startUnits,
+        endUsage: endUnits,
     });
+}
+
+function lowestPositive(existing: number, candidate: number): number {
+    if (candidate <= 0) {
+        return existing;
+    }
+
+    if (existing <= 0) {
+        return candidate;
+    }
+
+    return Math.min(existing, candidate);
+}
+
+function highestPositive(existing: number, candidate: number): number {
+    if (candidate <= 0) {
+        return existing;
+    }
+
+    if (existing <= 0) {
+        return candidate;
+    }
+
+    return Math.max(existing, candidate);
 }
