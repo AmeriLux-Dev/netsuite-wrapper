@@ -17,8 +17,29 @@ define(["require", "exports", "./execution-tracking"], function (require, export
     exports.getFunctionContextStack = getFunctionContextStack;
     exports.withFunctionContext = withFunctionContext;
     var functionContextStack = [];
+    var cachedRuntime = null;
     function cloneFunctionContext(context) {
         return __assign({}, context);
+    }
+    function isPromiseLike(value) {
+        return Boolean(value) && typeof value.then === 'function';
+    }
+    function loadRuntimeModule() {
+        var loaded = require('N/runtime');
+        cachedRuntime = loaded;
+        return loaded;
+    }
+    // Reads remaining governance units for the current script. Returns 0 when N/runtime is unavailable
+    // (e.g. outside SuiteScript / in tests) so callers can treat 0 as "not captured".
+    function readRemainingUsage() {
+        try {
+            var runtimeModule = cachedRuntime !== null && cachedRuntime !== void 0 ? cachedRuntime : loadRuntimeModule();
+            var remaining = runtimeModule.getCurrentScript().getRemainingUsage();
+            return typeof remaining === 'number' && remaining > 0 ? remaining : 0;
+        }
+        catch (_error) {
+            return 0;
+        }
     }
     function removeFunctionContext(context) {
         var contextIndex = functionContextStack.lastIndexOf(context);
@@ -59,33 +80,34 @@ define(["require", "exports", "./execution-tracking"], function (require, export
     }
     function withFunctionContext(context, work) {
         var trackedContext = cloneFunctionContext(context);
-        var didCleanup = false;
-        var cleanup = function () {
-            if (didCleanup) {
+        var startedAt = Date.now();
+        var startUsage = readRemainingUsage();
+        var didFinish = false;
+        var finish = function () {
+            if (didFinish) {
                 return;
             }
-            didCleanup = true;
+            didFinish = true;
+            (0, execution_tracking_1.recordFunctionInvocation)(trackedContext, startedAt, Date.now(), startUsage, readRemainingUsage());
             removeFunctionContext(trackedContext);
         };
         functionContextStack.push(trackedContext);
-        (0, execution_tracking_1.recordFunctionInvocation)(trackedContext);
         try {
             var result = work();
-            if (result && typeof result.then === 'function') {
-                var asyncResult = result;
-                return asyncResult.then(function (value) {
-                    cleanup();
+            if (isPromiseLike(result)) {
+                return result.then(function (value) {
+                    finish();
                     return value;
                 }, function (error) {
-                    cleanup();
+                    finish();
                     throw error;
                 });
             }
-            cleanup();
+            finish();
             return result;
         }
         catch (error) {
-            cleanup();
+            finish();
             throw error;
         }
     }
