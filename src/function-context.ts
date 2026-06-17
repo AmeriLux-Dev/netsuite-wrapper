@@ -92,6 +92,7 @@ export function getFunctionContextStack(): FunctionCallerContext[] {
 
 export function withFunctionContext<T>(context: FunctionCallerContext, work: () => T): T {
     const trackedContext = cloneFunctionContext(context);
+    const parentContext = getPreferredActiveFunctionContext();
     const startedAt = Date.now();
     const startUsage = readRemainingUsage();
     let didFinish = false;
@@ -102,7 +103,10 @@ export function withFunctionContext<T>(context: FunctionCallerContext, work: () 
         }
 
         didFinish = true;
-        recordFunctionInvocation(trackedContext, startedAt, Date.now(), startUsage, readRemainingUsage());
+        recordFunctionInvocation(trackedContext, startedAt, Date.now(), startUsage, readRemainingUsage(), {
+            parentFunctionName: parentContext?.functionName,
+            parentModulePath: parentContext?.modulePath || parentContext?.filePath,
+        });
         removeFunctionContext(trackedContext);
     };
 

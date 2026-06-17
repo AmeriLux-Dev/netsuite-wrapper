@@ -18,6 +18,13 @@ export interface ObservedFunctionSummary {
     endedAt: number;
     startUsage: number;
     endUsage: number;
+    parentFunctionName: string;
+    parentModulePath: string;
+}
+
+export interface ObservedFunctionParent {
+    parentFunctionName?: string;
+    parentModulePath?: string;
 }
 
 export interface ActiveTrackedExecutionSnapshot extends TrackedScriptEntryMetadata {
@@ -130,7 +137,7 @@ export function finishTrackedScriptExecution(executionId?: string): ActiveTracke
     return null;
 }
 
-export function recordFunctionInvocation(context: FunctionCallerContext, startedAt = 0, endedAt = 0, startUsage = 0, endUsage = 0): void {
+export function recordFunctionInvocation(context: FunctionCallerContext, startedAt = 0, endedAt = 0, startUsage = 0, endUsage = 0, parent: ObservedFunctionParent = {}): void {
     const activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
     if (!activeExecution) {
         return;
@@ -150,8 +157,10 @@ export function recordFunctionInvocation(context: FunctionCallerContext, started
     const endMs = normalizePositive(endedAt);
     const startUnits = normalizePositive(startUsage);
     const endUnits = normalizePositive(endUsage);
+    const parentFunctionName = normalizeText(parent.parentFunctionName);
+    const parentModulePath = normalizeText(parent.parentModulePath);
 
-    const observationKey = `${modulePath}::${functionName}`;
+    const observationKey = `${parentModulePath}::${parentFunctionName}>>${modulePath}::${functionName}`;
     const existingSummary = activeExecution.observedFunctions.get(observationKey);
     if (existingSummary) {
         existingSummary.count += 1;
@@ -171,6 +180,8 @@ export function recordFunctionInvocation(context: FunctionCallerContext, started
         endedAt: endMs,
         startUsage: startUnits,
         endUsage: endUnits,
+        parentFunctionName,
+        parentModulePath,
     });
 }
 

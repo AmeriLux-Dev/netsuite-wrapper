@@ -80,6 +80,7 @@ define(["require", "exports", "./execution-tracking"], function (require, export
     }
     function withFunctionContext(context, work) {
         var trackedContext = cloneFunctionContext(context);
+        var parentContext = getPreferredActiveFunctionContext();
         var startedAt = Date.now();
         var startUsage = readRemainingUsage();
         var didFinish = false;
@@ -88,7 +89,10 @@ define(["require", "exports", "./execution-tracking"], function (require, export
                 return;
             }
             didFinish = true;
-            (0, execution_tracking_1.recordFunctionInvocation)(trackedContext, startedAt, Date.now(), startUsage, readRemainingUsage());
+            (0, execution_tracking_1.recordFunctionInvocation)(trackedContext, startedAt, Date.now(), startUsage, readRemainingUsage(), {
+                parentFunctionName: parentContext === null || parentContext === void 0 ? void 0 : parentContext.functionName,
+                parentModulePath: (parentContext === null || parentContext === void 0 ? void 0 : parentContext.modulePath) || (parentContext === null || parentContext === void 0 ? void 0 : parentContext.filePath),
+            });
             removeFunctionContext(trackedContext);
         };
         functionContextStack.push(trackedContext);

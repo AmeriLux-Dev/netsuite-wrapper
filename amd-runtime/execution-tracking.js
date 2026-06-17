@@ -96,11 +96,12 @@ define(["require", "exports"], function (require, exports) {
         }
         return null;
     }
-    function recordFunctionInvocation(context, startedAt, endedAt, startUsage, endUsage) {
+    function recordFunctionInvocation(context, startedAt, endedAt, startUsage, endUsage, parent) {
         if (startedAt === void 0) { startedAt = 0; }
         if (endedAt === void 0) { endedAt = 0; }
         if (startUsage === void 0) { startUsage = 0; }
         if (endUsage === void 0) { endUsage = 0; }
+        if (parent === void 0) { parent = {}; }
         var activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
         if (!activeExecution) {
             return;
@@ -117,7 +118,9 @@ define(["require", "exports"], function (require, exports) {
         var endMs = normalizePositive(endedAt);
         var startUnits = normalizePositive(startUsage);
         var endUnits = normalizePositive(endUsage);
-        var observationKey = "".concat(modulePath, "::").concat(functionName);
+        var parentFunctionName = normalizeText(parent.parentFunctionName);
+        var parentModulePath = normalizeText(parent.parentModulePath);
+        var observationKey = "".concat(parentModulePath, "::").concat(parentFunctionName, ">>").concat(modulePath, "::").concat(functionName);
         var existingSummary = activeExecution.observedFunctions.get(observationKey);
         if (existingSummary) {
             existingSummary.count += 1;
@@ -136,6 +139,8 @@ define(["require", "exports"], function (require, exports) {
             endedAt: endMs,
             startUsage: startUnits,
             endUsage: endUnits,
+            parentFunctionName: parentFunctionName,
+            parentModulePath: parentModulePath,
         });
     }
     function lowestPositive(existing, candidate) {
