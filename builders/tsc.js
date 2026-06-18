@@ -311,11 +311,103 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
         ? path.join(wrapperOutputDir, 'performance-tracker.js')
         : '';
     const normalizedWrapperOutputDir = normalizeSlashes(wrapperOutputDir);
-    const filteredOutputFiles = getAllFiles(outDir, {
-        shouldSkipDir(dirPath) {
-            return normalizeSlashes(dirPath) === normalizedWrapperOutputDir;
-        },
-    }).filter((filePath) => filePath.endsWith('.js'));
+    const sourceExtensions = ['.ts', '.tsx', '.mts', '.cts'];
+    let filteredOutputFiles;
+    if (rootDir) {
+        // Scope instrumentation to the files tsc actually emitted from sources under rootDir, then
+        // narrow further to the modules reachable from "root" scripts (those carrying a @pftr:scopeKey
+        // marker). A single configured script therefore instruments only itself and the modules it
+        // imports transitively, and leaves every unrelated emitted module untouched. Vendored,
+        // non-AMD files outside the emitted set are never visited, so they cannot abort the rewrite.
+        const resolvedRootDir = path.resolve(rootDir);
+        const emittedOutputFiles = [];
+        const rootOutputFiles = [];
+
+        const hasScopeKeyMarker = (sourceCode) => {
+            const leadingCommentMatch = sourceCode.match(/^\s*((?:\/\*[\s\S]*?\*\/\s*|\/\/[^\r\n]*\r?\n\s*)+)/);
+            const leadingComment = leadingCommentMatch ? leadingCommentMatch[1] : '';
+            return /@pftr:scopeKey\s+\S/.test(leadingComment);
+        };
+
+        for (const sourceFile of getAllFiles(resolvedRootDir)) {
+            const lowerSourceFile = sourceFile.toLowerCase();
+            if (/\.d\.ts$/i.test(sourceFile) || !sourceExtensions.some((extension) => lowerSourceFile.endsWith(extension))) {
+                continue;
+            }
+
+            const relativeSourcePath = path.relative(resolvedRootDir, sourceFile);
+            const candidateOutputFile = path.join(outDir, relativeSourcePath).replace(/\.[^.]+$/, '.js');
+            if (!fs.existsSync(candidateOutputFile)) {
+                continue;
+            }
+
+            emittedOutputFiles.push(candidateOutputFile);
+            if (hasScopeKeyMarker(fs.readFileSync(sourceFile, 'utf8'))) {
+                rootOutputFiles.push(candidateOutputFile);
+            }
+        }
+
+        if (rootOutputFiles.length === 0) {
+            // No emitted script declared a scopeKey, so instrument every emitted module.
+            filteredOutputFiles = emittedOutputFiles;
+        } else {
+            const emittedOutputSet = new Set(emittedOutputFiles.map((filePath) => path.resolve(filePath)));
+            const collectLocalDependencies = (moduleSource) => {
+                const specifiers = new Set();
+                const defineMatch = moduleSource.match(/define\(\s*\[(.*?)\]/s);
+                if (defineMatch) {
+                    for (const match of defineMatch[1].matchAll(/['"](\.[^'"]+)['"]/g)) {
+                        specifiers.add(match[1]);
+                    }
+                }
+
+                for (const match of moduleSource.matchAll(/require\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+                    specifiers.add(match[1]);
+                }
+
+                return specifiers;
+            };
+
+            const visited = new Set();
+            const queue = [];
+            for (const rootFile of rootOutputFiles) {
+                const resolvedRootFile = path.resolve(rootFile);
+                if (!visited.has(resolvedRootFile)) {
+                    visited.add(resolvedRootFile);
+                    queue.push(resolvedRootFile);
+                }
+            }
+
+            while (queue.length > 0) {
+                const currentFile = queue.shift();
+                let moduleSource;
+                try {
+                    moduleSource = fs.readFileSync(currentFile, 'utf8');
+                } catch (error) {
+                    continue;
+                }
+
+                const currentDir = path.dirname(currentFile);
+                for (const specifier of collectLocalDependencies(moduleSource)) {
+                    const dependencyFile = path.resolve(currentDir, `${specifier}.js`);
+                    if (visited.has(dependencyFile) || !emittedOutputSet.has(dependencyFile)) {
+                        continue;
+                    }
+
+                    visited.add(dependencyFile);
+                    queue.push(dependencyFile);
+                }
+            }
+
+            filteredOutputFiles = Array.from(visited);
+        }
+    } else {
+        filteredOutputFiles = getAllFiles(outDir, {
+            shouldSkipDir(dirPath) {
+                return normalizeSlashes(dirPath) === normalizedWrapperOutputDir;
+            },
+        }).filter((filePath) => filePath.endsWith('.js'));
+    }
 
     for (const outputFile of filteredOutputFiles) {
         const sourceText = fs.readFileSync(outputFile, 'utf8');
