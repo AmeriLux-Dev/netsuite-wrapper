@@ -119,6 +119,10 @@ function rewriteRequireCalls(sourceText, resolveSpecifier) {
     });
 }
 
+// Adds side-effect bootstrap modules to a define() dependency array. AMD binds the dependency array
+// to the factory parameters by position, so these must be appended AFTER the existing dependencies:
+// prepending them (they have no matching factory parameter) would shift "require"/"exports" and every
+// real import off by one.
 function prependAmdDependencies(sourceText, dependencies) {
     if (dependencies.length === 0) {
         return sourceText;
@@ -133,8 +137,12 @@ function prependAmdDependencies(sourceText, dependencies) {
             return fullMatch;
         }
 
-        const prefix = dependenciesText.trim() ? `${missingDependencies.map((dependency) => JSON.stringify(dependency)).join(', ')}, ` : `${missingDependencies.map((dependency) => JSON.stringify(dependency)).join(', ')}`;
-        return `define([${prefix}${dependenciesText}]${suffix}`;
+        const appendedDependencies = missingDependencies.map((dependency) => JSON.stringify(dependency)).join(', ');
+        const trimmedDependenciesText = dependenciesText.replace(/\s+$/, '');
+        const newDependenciesText = trimmedDependenciesText.trim()
+            ? `${trimmedDependenciesText}, ${appendedDependencies}`
+            : appendedDependencies;
+        return `define([${newDependenciesText}]${suffix}`;
     });
 }
 
@@ -312,6 +320,7 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
         : '';
     const normalizedWrapperOutputDir = normalizeSlashes(wrapperOutputDir);
     const sourceExtensions = ['.ts', '.tsx', '.mts', '.cts'];
+    const rootOutputFileSet = new Set();
     let filteredOutputFiles;
     if (rootDir) {
         // Scope instrumentation to the files tsc actually emitted from sources under rootDir, then
@@ -321,7 +330,6 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
         // non-AMD files outside the emitted set are never visited, so they cannot abort the rewrite.
         const resolvedRootDir = path.resolve(rootDir);
         const emittedOutputFiles = [];
-        const rootOutputFiles = [];
 
         const hasScopeKeyMarker = (sourceCode) => {
             const leadingCommentMatch = sourceCode.match(/^\s*((?:\/\*[\s\S]*?\*\/\s*|\/\/[^\r\n]*\r?\n\s*)+)/);
@@ -343,11 +351,11 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
 
             emittedOutputFiles.push(candidateOutputFile);
             if (hasScopeKeyMarker(fs.readFileSync(sourceFile, 'utf8'))) {
-                rootOutputFiles.push(candidateOutputFile);
+                rootOutputFileSet.add(path.resolve(candidateOutputFile));
             }
         }
 
-        if (rootOutputFiles.length === 0) {
+        if (rootOutputFileSet.size === 0) {
             // No emitted script declared a scopeKey, so instrument every emitted module.
             filteredOutputFiles = emittedOutputFiles;
         } else {
@@ -370,8 +378,7 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
 
             const visited = new Set();
             const queue = [];
-            for (const rootFile of rootOutputFiles) {
-                const resolvedRootFile = path.resolve(rootFile);
+            for (const resolvedRootFile of rootOutputFileSet) {
                 if (!visited.has(resolvedRootFile)) {
                     visited.add(resolvedRootFile);
                     queue.push(resolvedRootFile);
@@ -431,9 +438,13 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
             return toModuleId(outputFile, targetFile);
         };
 
+        // Only attach the side-effect bootstrap to root entry scripts and to modules that actually had
+        // functions wrapped. A leaf/constants module with nothing instrumented has no telemetry to set
+        // up, so it is left without the dependency (and therefore untouched).
+        const attachBootstrap = rootOutputFileSet.has(path.resolve(outputFile)) || Boolean(instrumentedResult);
         const rewrittenText = prependAmdDependencies(
             rewriteRequireCalls(rewriteDefineDependencies(transformedSourceText, resolveSpecifier), resolveSpecifier),
-            bootstrapFiles.map((bootstrapFile) => toModuleId(outputFile, bootstrapFile)),
+            attachBootstrap ? bootstrapFiles.map((bootstrapFile) => toModuleId(outputFile, bootstrapFile)) : [],
         );
 
         if (rewrittenText !== sourceText) {

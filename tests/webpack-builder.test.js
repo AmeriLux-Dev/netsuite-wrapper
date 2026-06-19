@@ -237,6 +237,80 @@ test('walks from a scopeKey root and leaves unreachable emitted modules untouche
     fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test('appends bootstrap dependencies after require/exports so AMD factory params stay aligned', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-amd-order-'));
+    const outDir = path.join(tempRoot, 'dist');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'telemetry.js'), 'define([], function () { return { setWrapperTelemetrySink: function () {} }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'performance-tracker.js'), 'define([], function () { return { createPerformanceTrackerSink: function () { return { runOperation: function (_metadata, work) { return work(); } }; } }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'function-context.js'), 'define([], function () { return { withFunctionContext: function (_metadata, work) { return work(); } }; });');
+    fs.writeFileSync(path.join(outDir, 'index.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; function handler() { return 1; } exports.handler = handler; });');
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+    });
+
+    const output = fs.readFileSync(path.join(outDir, 'index.js'), 'utf8');
+    const depsMatch = output.match(/define\(\s*\[([^\]]*)\]/);
+    assert.ok(depsMatch, 'expected a define dependency array');
+    const deps = Array.from(depsMatch[1].matchAll(/['"]([^'"]+)['"]/g), (match) => match[1]);
+
+    assert.equal(deps[0], 'require', 'require must remain the first dependency to stay aligned with the first factory param');
+    assert.equal(deps[1], 'exports', 'exports must remain the second dependency');
+    assert.match(deps[deps.length - 1], /netsuite-wrapper\/bootstrap/, 'side-effect bootstrap should be appended at the end of the dependency list');
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('does not attach the bootstrap to imported leaf modules that have nothing instrumented', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-leaf-'));
+    const srcDir = path.join(tempRoot, 'TypeScripts');
+    const outDir = path.join(tempRoot, 'FileCabinet', 'SuiteScripts');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+
+    fs.writeFileSync(path.join(runtimeDir, 'telemetry.js'), 'define([], function () { return { setWrapperTelemetrySink: function () {} }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'performance-tracker.js'), 'define([], function () { return { runTrackedScriptEntry: function (_metadata, work) { return work(); }, createPerformanceTrackerSink: function () { return { runOperation: function (_metadata, work) { return work(); } }; } }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'function-context.js'), 'define([], function () { return { withFunctionContext: function (_metadata, work) { return work(); } }; });');
+
+    // The root carries a scopeKey and imports a constants-only leaf module that has no functions.
+    fs.writeFileSync(path.join(srcDir, 'root.ts'), '/**\n * @NScriptType Suitelet\n * @pftr:scopeKey app:test\n */\nimport { FLAG } from "./constants";\nexport function onRequest() { return FLAG; }');
+    fs.writeFileSync(path.join(srcDir, 'constants.ts'), 'export const FLAG = true;');
+
+    fs.writeFileSync(path.join(outDir, 'root.js'), '/**\n * @NScriptType Suitelet\n * @pftr:scopeKey app:test\n */\ndefine(["require", "exports", "./constants"], function (require, exports, constants_1) { "use strict"; Object.defineProperty(exports, "__esModule", { value: true }); function onRequest() { return constants_1.FLAG; } exports.onRequest = onRequest; });');
+    const constantsOutput = path.join(outDir, 'constants.js');
+    const constantsSource = 'define(["require", "exports"], function (require, exports) { "use strict"; Object.defineProperty(exports, "__esModule", { value: true }); exports.FLAG = true; });';
+    fs.writeFileSync(constantsOutput, constantsSource);
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        rootDir: srcDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+    });
+
+    assert.equal(
+        fs.readFileSync(constantsOutput, 'utf8'),
+        constantsSource,
+        'a constants-only leaf module should be left untouched (no bootstrap dependency)',
+    );
+    assert.match(
+        fs.readFileSync(path.join(outDir, 'root.js'), 'utf8'),
+        /netsuite-wrapper\/bootstrap/,
+        'the root entry script should still receive the bootstrap dependency',
+    );
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
 test('writes a tsc trace-log bootstrap that enables tracing when trace logging is on', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-trace-'));
     const outDir = path.join(tempRoot, 'dist');
