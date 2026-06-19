@@ -181,7 +181,7 @@ function createAmdBootstrapSource(sinkModuleId, sinkExportName, scopeKey) {
         '        }',
         '        var createSink = sinkExport === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExport];',
         '        if (typeof createSink !== "function") {',
-        '            throw new Error("netsuite-wrapper bootstrap could not find sink export \"" + sinkExport + "\" in " + sinkModuleName);',
+        '            throw new Error("netsuite-wrapper bootstrap could not find sink export " + sinkExport + " in " + sinkModuleName);',
         '        }',
         '        activeSink = createSink(sinkOptions);',
         '        return activeSink;',
@@ -312,6 +312,34 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
     const bootstrapFiles = resolveBootstrapFiles(resolvedOptions, outDir, wrapperOutputDir, rootDir);
     const instrumentationOptions = resolveTscInstrumentationOptions(options);
     const wrapperModules = collectWrapperModules(wrapperOutputDir);
+
+    // Each wrapper pulls in its underlying NetSuite module via a synchronous require('N/...'), which
+    // only resolves if that module is already loaded. Now that consuming scripts redirect N/<module>
+    // to the wrapper, nothing else preloads the real module. Two things are needed for the wrapper to
+    // behave as a drop-in replacement: (1) declare N/<module> (and the lazy-module helper) as AMD
+    // dependencies so they are loaded, and (2) forward every member of the real module the wrapper does
+    // not instrument, so unwrapped methods (e.g. query.runSuiteQLPaged) are not silently undefined.
+    for (const [specifier, filePath] of wrapperModules) {
+        const wrapperModuleSource = fs.readFileSync(filePath, 'utf8');
+        const escapedSpecifier = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (!new RegExp(`require\\(\\s*['"]${escapedSpecifier}['"]\\s*\\)`).test(wrapperModuleSource)) {
+            continue;
+        }
+
+        let updatedWrapperModuleSource = prependAmdDependencies(wrapperModuleSource, [specifier, './lazy-module']);
+        if (!updatedWrapperModuleSource.includes('forwardModuleExports')) {
+            const forwardCall = `\n    require('./lazy-module').forwardModuleExports(exports, function () { return require('${specifier}'); });\n`;
+            const factoryCloseIndex = updatedWrapperModuleSource.lastIndexOf('});');
+            if (factoryCloseIndex !== -1) {
+                updatedWrapperModuleSource = `${updatedWrapperModuleSource.slice(0, factoryCloseIndex)}${forwardCall}${updatedWrapperModuleSource.slice(factoryCloseIndex)}`;
+            }
+        }
+
+        if (updatedWrapperModuleSource !== wrapperModuleSource) {
+            fs.writeFileSync(filePath, updatedWrapperModuleSource, 'utf8');
+        }
+    }
+
     const functionContextModuleFile = instrumentationOptions.enabled
         ? path.join(wrapperOutputDir, 'function-context.js')
         : '';
