@@ -14,6 +14,17 @@ export interface ObservedFunctionSummary {
     modulePath: string;
     filePath: string;
     count: number;
+    startedAt: number;
+    endedAt: number;
+    totalDurationMs: number;
+    totalUsage: number;
+    parentFunctionName: string;
+    parentModulePath: string;
+}
+
+export interface ObservedFunctionParent {
+    parentFunctionName?: string;
+    parentModulePath?: string;
 }
 
 export interface ActiveTrackedExecutionSnapshot extends TrackedScriptEntryMetadata {
@@ -36,6 +47,10 @@ function normalizeText(value: unknown): string {
     }
 
     return String(value).trim();
+}
+
+function normalizePositive(value: number): number {
+    return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function makeId(prefix: string, startedAt: Date): string {
@@ -122,7 +137,7 @@ export function finishTrackedScriptExecution(executionId?: string): ActiveTracke
     return null;
 }
 
-export function recordFunctionInvocation(context: FunctionCallerContext): void {
+export function recordFunctionInvocation(context: FunctionCallerContext, startedAt = 0, endedAt = 0, startUsage = 0, endUsage = 0, parent: ObservedFunctionParent = {}): void {
     const activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
     if (!activeExecution) {
         return;
@@ -138,10 +153,23 @@ export function recordFunctionInvocation(context: FunctionCallerContext): void {
         return;
     }
 
-    const observationKey = `${modulePath}::${functionName}`;
+    const startMs = normalizePositive(startedAt);
+    const endMs = normalizePositive(endedAt);
+    const startUnits = normalizePositive(startUsage);
+    const endUnits = normalizePositive(endUsage);
+    const durationMs = endMs > startMs ? endMs - startMs : 0;
+    const usage = startUnits > 0 && endUnits > 0 && startUnits >= endUnits ? startUnits - endUnits : 0;
+    const parentFunctionName = normalizeText(parent.parentFunctionName);
+    const parentModulePath = normalizeText(parent.parentModulePath);
+
+    const observationKey = `${parentModulePath}::${parentFunctionName}>>${modulePath}::${functionName}`;
     const existingSummary = activeExecution.observedFunctions.get(observationKey);
     if (existingSummary) {
         existingSummary.count += 1;
+        existingSummary.totalDurationMs += durationMs;
+        existingSummary.totalUsage += usage;
+        existingSummary.startedAt = lowestPositive(existingSummary.startedAt, startMs);
+        existingSummary.endedAt = Math.max(existingSummary.endedAt, endMs);
         return;
     }
 
@@ -150,5 +178,23 @@ export function recordFunctionInvocation(context: FunctionCallerContext): void {
         modulePath,
         filePath: normalizeText(context.filePath),
         count: 1,
+        startedAt: startMs,
+        endedAt: endMs,
+        totalDurationMs: durationMs,
+        totalUsage: usage,
+        parentFunctionName,
+        parentModulePath,
     });
+}
+
+function lowestPositive(existing: number, candidate: number): number {
+    if (candidate <= 0) {
+        return existing;
+    }
+
+    if (existing <= 0) {
+        return candidate;
+    }
+
+    return Math.min(existing, candidate);
 }

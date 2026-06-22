@@ -137,6 +137,375 @@ test('keeps the tsc bootstrap path on the local runtime when packageName is cust
     fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test('only instruments tsc-emitted output and leaves vendored non-AMD files untouched', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-scope-'));
+    const srcDir = path.join(tempRoot, 'TypeScripts');
+    const outDir = path.join(tempRoot, 'FileCabinet', 'SuiteScripts');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+    const vendorDir = path.join(outDir, 'vendor_bundle');
+
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.mkdirSync(vendorDir, { recursive: true });
+
+    fs.writeFileSync(path.join(runtimeDir, 'function-context.js'), 'define([], function () { return { withFunctionContext: function (_metadata, work) { return work(); } }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'performance-tracker.js'), 'define([], function () { return { createPerformanceTrackerSink: function () { return { runOperation: function (_metadata, work) { return work(); } }; } }; });');
+
+    // A real TypeScript source and its emitted AMD output.
+    fs.writeFileSync(path.join(srcDir, 'entry.ts'), 'export function handler() { return 1; }');
+    const emittedOutputFile = path.join(outDir, 'entry.js');
+    fs.writeFileSync(emittedOutputFile, 'define(["require", "exports"], function (require, exports) { "use strict"; function handler() { return 1; } exports.handler = handler; });');
+
+    // A vendored, non-AMD bundle file that lives in the output tree but is not compiler output.
+    const vendorFile = path.join(vendorDir, 'aes.js');
+    const vendorSource = 'module.exports = function aes() { return 42; };\n';
+    fs.writeFileSync(vendorFile, vendorSource);
+
+    assert.doesNotThrow(() => {
+        rewriteNetSuiteWrapperTscOutput({
+            outDir,
+            rootDir: srcDir,
+            runtimeDir,
+            wrapperSubdir: 'netsuite-wrapper',
+            telemetryBootstrap: false,
+        });
+    }, 'rewrite should not throw on vendored non-AMD files in the output tree');
+
+    assert.equal(
+        fs.readFileSync(vendorFile, 'utf8'),
+        vendorSource,
+        'vendored non-AMD file should be left untouched',
+    );
+    assert.match(
+        fs.readFileSync(emittedOutputFile, 'utf8'),
+        /function-context/,
+        'tsc-emitted output should be instrumented',
+    );
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('walks from a scopeKey root and leaves unreachable emitted modules untouched', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-graph-'));
+    const srcDir = path.join(tempRoot, 'TypeScripts');
+    const outDir = path.join(tempRoot, 'FileCabinet', 'SuiteScripts');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+
+    fs.writeFileSync(path.join(runtimeDir, 'function-context.js'), 'define([], function () { return { withFunctionContext: function (_metadata, work) { return work(); } }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'performance-tracker.js'), 'define([], function () { return { runTrackedScriptEntry: function (_metadata, work) { return work(); }, createPerformanceTrackerSink: function () { return { runOperation: function (_metadata, work) { return work(); } }; } }; });');
+
+    // The root script carries a scopeKey and imports moduleA; moduleB is emitted but never imported.
+    fs.writeFileSync(path.join(srcDir, 'root.ts'), '/**\n * @NScriptType Suitelet\n * @pftr:scopeKey app:test\n */\nimport { helperA } from "./moduleA";\nexport function onRequest() { return helperA(); }');
+    fs.writeFileSync(path.join(srcDir, 'moduleA.ts'), 'export function helperA() { return 1; }');
+    fs.writeFileSync(path.join(srcDir, 'moduleB.ts'), 'export function helperB() { return 2; }');
+
+    fs.writeFileSync(path.join(outDir, 'root.js'), '/**\n * @NScriptType Suitelet\n * @pftr:scopeKey app:test\n */\ndefine(["require", "exports", "./moduleA"], function (require, exports, moduleA_1) { "use strict"; Object.defineProperty(exports, "__esModule", { value: true }); function onRequest() { return (0, moduleA_1.helperA)(); } exports.onRequest = onRequest; });');
+    fs.writeFileSync(path.join(outDir, 'moduleA.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; function helperA() { return 1; } exports.helperA = helperA; });');
+    const moduleBOutput = path.join(outDir, 'moduleB.js');
+    const moduleBSource = 'define(["require", "exports"], function (require, exports) { "use strict"; function helperB() { return 2; } exports.helperB = helperB; });';
+    fs.writeFileSync(moduleBOutput, moduleBSource);
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        rootDir: srcDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+        telemetryBootstrap: false,
+    });
+
+    assert.equal(
+        fs.readFileSync(moduleBOutput, 'utf8'),
+        moduleBSource,
+        'a module not reachable from any scopeKey root should be left untouched',
+    );
+    assert.match(
+        fs.readFileSync(path.join(outDir, 'moduleA.js'), 'utf8'),
+        /function-context|withFunctionContext/,
+        'a module imported by the root should be instrumented',
+    );
+    assert.match(
+        fs.readFileSync(path.join(outDir, 'root.js'), 'utf8'),
+        /function-context|withFunctionContext|TrackedScriptEntry/,
+        'the root script should be instrumented',
+    );
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('appends bootstrap dependencies after require/exports so AMD factory params stay aligned', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-amd-order-'));
+    const outDir = path.join(tempRoot, 'dist');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'telemetry.js'), 'define([], function () { return { setWrapperTelemetrySink: function () {} }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'performance-tracker.js'), 'define([], function () { return { createPerformanceTrackerSink: function () { return { runOperation: function (_metadata, work) { return work(); } }; } }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'function-context.js'), 'define([], function () { return { withFunctionContext: function (_metadata, work) { return work(); } }; });');
+    fs.writeFileSync(path.join(outDir, 'index.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; function handler() { return 1; } exports.handler = handler; });');
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+    });
+
+    const output = fs.readFileSync(path.join(outDir, 'index.js'), 'utf8');
+    const depsMatch = output.match(/define\(\s*\[([^\]]*)\]/);
+    assert.ok(depsMatch, 'expected a define dependency array');
+    const deps = Array.from(depsMatch[1].matchAll(/['"]([^'"]+)['"]/g), (match) => match[1]);
+
+    assert.equal(deps[0], 'require', 'require must remain the first dependency to stay aligned with the first factory param');
+    assert.equal(deps[1], 'exports', 'exports must remain the second dependency');
+    assert.match(deps[deps.length - 1], /netsuite-wrapper\/bootstrap/, 'side-effect bootstrap should be appended at the end of the dependency list');
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('does not attach the bootstrap to imported leaf modules that have nothing instrumented', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-leaf-'));
+    const srcDir = path.join(tempRoot, 'TypeScripts');
+    const outDir = path.join(tempRoot, 'FileCabinet', 'SuiteScripts');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+
+    fs.writeFileSync(path.join(runtimeDir, 'telemetry.js'), 'define([], function () { return { setWrapperTelemetrySink: function () {} }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'performance-tracker.js'), 'define([], function () { return { runTrackedScriptEntry: function (_metadata, work) { return work(); }, createPerformanceTrackerSink: function () { return { runOperation: function (_metadata, work) { return work(); } }; } }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'function-context.js'), 'define([], function () { return { withFunctionContext: function (_metadata, work) { return work(); } }; });');
+
+    // The root carries a scopeKey and imports a constants-only leaf module that has no functions.
+    fs.writeFileSync(path.join(srcDir, 'root.ts'), '/**\n * @NScriptType Suitelet\n * @pftr:scopeKey app:test\n */\nimport { FLAG } from "./constants";\nexport function onRequest() { return FLAG; }');
+    fs.writeFileSync(path.join(srcDir, 'constants.ts'), 'export const FLAG = true;');
+
+    fs.writeFileSync(path.join(outDir, 'root.js'), '/**\n * @NScriptType Suitelet\n * @pftr:scopeKey app:test\n */\ndefine(["require", "exports", "./constants"], function (require, exports, constants_1) { "use strict"; Object.defineProperty(exports, "__esModule", { value: true }); function onRequest() { return constants_1.FLAG; } exports.onRequest = onRequest; });');
+    const constantsOutput = path.join(outDir, 'constants.js');
+    const constantsSource = 'define(["require", "exports"], function (require, exports) { "use strict"; Object.defineProperty(exports, "__esModule", { value: true }); exports.FLAG = true; });';
+    fs.writeFileSync(constantsOutput, constantsSource);
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        rootDir: srcDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+    });
+
+    assert.equal(
+        fs.readFileSync(constantsOutput, 'utf8'),
+        constantsSource,
+        'a constants-only leaf module should be left untouched (no bootstrap dependency)',
+    );
+    assert.match(
+        fs.readFileSync(path.join(outDir, 'root.js'), 'utf8'),
+        /netsuite-wrapper\/bootstrap/,
+        'the root entry script should still receive the bootstrap dependency',
+    );
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('generates a syntactically valid AMD telemetry bootstrap', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-bootstrap-syntax-'));
+    const outDir = path.join(tempRoot, 'dist');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'telemetry.js'), 'define([], function () { return { setWrapperTelemetrySink: function () {} }; });');
+    fs.writeFileSync(path.join(runtimeDir, 'performance-tracker.js'), 'define([], function () { return { createPerformanceTrackerSink: function () { return { runOperation: function (_metadata, work) { return work(); } }; } }; });');
+    fs.writeFileSync(path.join(outDir, 'index.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; exports.flag = true; });');
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+        instrumentation: false,
+    });
+
+    const bootstrapSource = fs.readFileSync(path.join(outDir, 'netsuite-wrapper', 'bootstrap.js'), 'utf8');
+    assert.doesNotThrow(
+        () => new Function(bootstrapSource),
+        'generated bootstrap.js should be syntactically valid JavaScript',
+    );
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('makes wrapper modules declare the N/ module they synchronously require', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-preload-'));
+    const outDir = path.join(tempRoot, 'dist');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'telemetry.js'), 'define([], function () { return { setWrapperTelemetrySink: function () {}, runWrappedOperation: function (_m, w) { return w(); } }; });');
+    fs.writeFileSync(
+        path.join(runtimeDir, 'search.js'),
+        'define(["require", "exports", "./telemetry"], function (require, exports, telemetry_1) { "use strict"; function getNsSearch() { return require("N/search"); } exports.create = function () { return getNsSearch().create(); }; });',
+    );
+    fs.writeFileSync(path.join(outDir, 'index.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; exports.flag = true; });');
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+        telemetryBootstrap: false,
+        instrumentation: false,
+    });
+
+    const wrapperSearch = fs.readFileSync(path.join(outDir, 'netsuite-wrapper', 'search.js'), 'utf8');
+    const depsMatch = wrapperSearch.match(/define\(\s*\[([^\]]*)\]/);
+    assert.ok(depsMatch, 'expected a define dependency array in the wrapper search module');
+    const deps = Array.from(depsMatch[1].matchAll(/['"]([^'"]+)['"]/g), (match) => match[1]);
+    assert.ok(
+        deps.includes('N/search'),
+        'wrapper search module must declare N/search so its synchronous require resolves at load time',
+    );
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('forwards un-instrumented members of the N/ module in wrapper output', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-forward-'));
+    const outDir = path.join(tempRoot, 'dist');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'lazy-module.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; exports.forwardModuleExports = function () {}; });');
+    fs.writeFileSync(
+        path.join(runtimeDir, 'search.js'),
+        'define(["require", "exports", "./telemetry"], function (require, exports, telemetry_1) { "use strict"; function getNsSearch() { return require("N/search"); } exports.create = function () { return getNsSearch().create(); }; });',
+    );
+    fs.writeFileSync(path.join(outDir, 'index.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; exports.flag = true; });');
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+        telemetryBootstrap: false,
+        instrumentation: false,
+    });
+
+    const wrapperSearch = fs.readFileSync(path.join(outDir, 'netsuite-wrapper', 'search.js'), 'utf8');
+    assert.match(
+        wrapperSearch,
+        /require\(['"]\.\/lazy-module['"]\)\.forwardModuleExports\(exports,/,
+        'wrapper should forward un-instrumented members of its N/ module',
+    );
+
+    const deps = Array.from(wrapperSearch.match(/define\(\s*\[([^\]]*)\]/)[1].matchAll(/['"]([^'"]+)['"]/g), (match) => match[1]);
+    assert.ok(deps.includes('./lazy-module'), 'wrapper must load ./lazy-module so the forwarding helper is available');
+    assert.ok(deps.includes('N/search'), 'wrapper must load N/search so forwarding can read the real module');
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('wraps exported entry functions of an AMD tracked script with the tracked-script entry helper', () => {
+    const source = [
+        '/**',
+        ' * @NApiVersion 2.1',
+        ' * @NScriptType MapReduceScript',
+        ' * @pftr:scopeKey app:test',
+        ' */',
+        'define(["require", "exports"], function (require, exports) {',
+        '    "use strict";',
+        '    Object.defineProperty(exports, "__esModule", { value: true });',
+        '    exports.map = exports.getInputData = void 0;',
+        '    const getInputData = () => { return []; };',
+        '    exports.getInputData = getInputData;',
+        '    const map = (context) => { return 1; };',
+        '    exports.map = map;',
+        '});',
+    ].join('\n');
+
+    const result = transformNetSuiteWrapperSource(source, {
+        resourcePath: '/project/amx_test.js',
+        rootContext: '/project',
+        functionContextModule: './netsuite-wrapper/function-context',
+        trackedScriptEntryModule: './netsuite-wrapper/performance-tracker',
+        instrumentationSource: 'tsc-amd-auto',
+        moduleFormat: 'amd',
+    });
+
+    assert.ok(result, 'expected the tracked script to be instrumented');
+    assert.match(result.code, /runTrackedScriptEntry/, 'exported entry functions should be wrapped with the tracked-script entry helper');
+    assert.match(result.code, /performance-tracker/, 'the tracked-script entry module should be imported');
+});
+
+test('records tracked entry functions as the root of their observed-function tree', () => {
+    const source = [
+        '/**',
+        ' * @NScriptType MapReduceScript',
+        ' * @pftr:scopeKey app:test',
+        ' */',
+        'define(["require", "exports"], function (require, exports) {',
+        '    "use strict";',
+        '    exports.getInputData = void 0;',
+        '    const helper = (x) => { return x; };',
+        '    const getInputData = () => { return helper(1); };',
+        '    exports.getInputData = getInputData;',
+        '});',
+    ].join('\n');
+
+    const result = transformNetSuiteWrapperSource(source, {
+        resourcePath: '/project/amx_test.js',
+        rootContext: '/project',
+        functionContextModule: './netsuite-wrapper/function-context',
+        trackedScriptEntryModule: './netsuite-wrapper/performance-tracker',
+        instrumentationSource: 'tsc-amd-auto',
+        moduleFormat: 'amd',
+    });
+
+    assert.ok(result);
+    // The entry must still be wrapped as a tracked-script entry...
+    assert.match(result.code, /RunTrackedScriptEntry/);
+    // ...and must also be recorded as an observed function (parent = none) so it is the root node of
+    // the observed-function call tree. Excluding it would orphan its children and make the first child
+    // appear as the tree root.
+    assert.doesNotMatch(result.code, /functionName: "getInputData"[^}]*excludeFromObservedFunctions: true/);
+    assert.doesNotMatch(result.code, /functionName: "helper"[^}]*excludeFromObservedFunctions: true/);
+});
+
+test('does not re-instrument already-instrumented output (idempotent)', () => {
+    const source = [
+        '/**',
+        ' * @NScriptType MapReduceScript',
+        ' * @pftr:scopeKey app:test',
+        ' */',
+        'define(["require", "exports"], function (require, exports) {',
+        '    "use strict";',
+        '    exports.getInputData = void 0;',
+        '    const helper = (x) => { return x; };',
+        '    const getInputData = async () => { return helper(1); };',
+        '    exports.getInputData = getInputData;',
+        '});',
+    ].join('\n');
+
+    const options = {
+        resourcePath: '/project/amx_test.js',
+        rootContext: '/project',
+        functionContextModule: './netsuite-wrapper/function-context',
+        trackedScriptEntryModule: './netsuite-wrapper/performance-tracker',
+        instrumentationSource: 'tsc-amd-auto',
+        moduleFormat: 'amd',
+    };
+
+    const first = transformNetSuiteWrapperSource(source, options);
+    assert.ok(first, 'first pass should instrument the file');
+    assert.equal((first.code.match(/RunTrackedScriptEntry\(/g) || []).length, 1, 'entry wrapped exactly once');
+
+    const second = transformNetSuiteWrapperSource(first.code, options);
+    assert.equal(second, null, 'a second pass over already-instrumented output must be a no-op');
+});
+
 test('writes a tsc trace-log bootstrap that enables tracing when trace logging is on', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-trace-'));
     const outDir = path.join(tempRoot, 'dist');

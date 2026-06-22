@@ -119,6 +119,10 @@ function rewriteRequireCalls(sourceText, resolveSpecifier) {
     });
 }
 
+// Adds side-effect bootstrap modules to a define() dependency array. AMD binds the dependency array
+// to the factory parameters by position, so these must be appended AFTER the existing dependencies:
+// prepending them (they have no matching factory parameter) would shift "require"/"exports" and every
+// real import off by one.
 function prependAmdDependencies(sourceText, dependencies) {
     if (dependencies.length === 0) {
         return sourceText;
@@ -133,8 +137,12 @@ function prependAmdDependencies(sourceText, dependencies) {
             return fullMatch;
         }
 
-        const prefix = dependenciesText.trim() ? `${missingDependencies.map((dependency) => JSON.stringify(dependency)).join(', ')}, ` : `${missingDependencies.map((dependency) => JSON.stringify(dependency)).join(', ')}`;
-        return `define([${prefix}${dependenciesText}]${suffix}`;
+        const appendedDependencies = missingDependencies.map((dependency) => JSON.stringify(dependency)).join(', ');
+        const trimmedDependenciesText = dependenciesText.replace(/\s+$/, '');
+        const newDependenciesText = trimmedDependenciesText.trim()
+            ? `${trimmedDependenciesText}, ${appendedDependencies}`
+            : appendedDependencies;
+        return `define([${newDependenciesText}]${suffix}`;
     });
 }
 
@@ -173,7 +181,7 @@ function createAmdBootstrapSource(sinkModuleId, sinkExportName, scopeKey) {
         '        }',
         '        var createSink = sinkExport === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExport];',
         '        if (typeof createSink !== "function") {',
-        '            throw new Error("netsuite-wrapper bootstrap could not find sink export \"" + sinkExport + "\" in " + sinkModuleName);',
+        '            throw new Error("netsuite-wrapper bootstrap could not find sink export " + sinkExport + " in " + sinkModuleName);',
         '        }',
         '        activeSink = createSink(sinkOptions);',
         '        return activeSink;',
@@ -304,6 +312,34 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
     const bootstrapFiles = resolveBootstrapFiles(resolvedOptions, outDir, wrapperOutputDir, rootDir);
     const instrumentationOptions = resolveTscInstrumentationOptions(options);
     const wrapperModules = collectWrapperModules(wrapperOutputDir);
+
+    // Each wrapper pulls in its underlying NetSuite module via a synchronous require('N/...'), which
+    // only resolves if that module is already loaded. Now that consuming scripts redirect N/<module>
+    // to the wrapper, nothing else preloads the real module. Two things are needed for the wrapper to
+    // behave as a drop-in replacement: (1) declare N/<module> (and the lazy-module helper) as AMD
+    // dependencies so they are loaded, and (2) forward every member of the real module the wrapper does
+    // not instrument, so unwrapped methods (e.g. query.runSuiteQLPaged) are not silently undefined.
+    for (const [specifier, filePath] of wrapperModules) {
+        const wrapperModuleSource = fs.readFileSync(filePath, 'utf8');
+        const escapedSpecifier = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (!new RegExp(`require\\(\\s*['"]${escapedSpecifier}['"]\\s*\\)`).test(wrapperModuleSource)) {
+            continue;
+        }
+
+        let updatedWrapperModuleSource = prependAmdDependencies(wrapperModuleSource, [specifier, './lazy-module']);
+        if (!updatedWrapperModuleSource.includes('forwardModuleExports')) {
+            const forwardCall = `\n    require('./lazy-module').forwardModuleExports(exports, function () { return require('${specifier}'); });\n`;
+            const factoryCloseIndex = updatedWrapperModuleSource.lastIndexOf('});');
+            if (factoryCloseIndex !== -1) {
+                updatedWrapperModuleSource = `${updatedWrapperModuleSource.slice(0, factoryCloseIndex)}${forwardCall}${updatedWrapperModuleSource.slice(factoryCloseIndex)}`;
+            }
+        }
+
+        if (updatedWrapperModuleSource !== wrapperModuleSource) {
+            fs.writeFileSync(filePath, updatedWrapperModuleSource, 'utf8');
+        }
+    }
+
     const functionContextModuleFile = instrumentationOptions.enabled
         ? path.join(wrapperOutputDir, 'function-context.js')
         : '';
@@ -311,11 +347,102 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
         ? path.join(wrapperOutputDir, 'performance-tracker.js')
         : '';
     const normalizedWrapperOutputDir = normalizeSlashes(wrapperOutputDir);
-    const filteredOutputFiles = getAllFiles(outDir, {
-        shouldSkipDir(dirPath) {
-            return normalizeSlashes(dirPath) === normalizedWrapperOutputDir;
-        },
-    }).filter((filePath) => filePath.endsWith('.js'));
+    const sourceExtensions = ['.ts', '.tsx', '.mts', '.cts'];
+    const rootOutputFileSet = new Set();
+    let filteredOutputFiles;
+    if (rootDir) {
+        // Scope instrumentation to the files tsc actually emitted from sources under rootDir, then
+        // narrow further to the modules reachable from "root" scripts (those carrying a @pftr:scopeKey
+        // marker). A single configured script therefore instruments only itself and the modules it
+        // imports transitively, and leaves every unrelated emitted module untouched. Vendored,
+        // non-AMD files outside the emitted set are never visited, so they cannot abort the rewrite.
+        const resolvedRootDir = path.resolve(rootDir);
+        const emittedOutputFiles = [];
+
+        const hasScopeKeyMarker = (sourceCode) => {
+            const leadingCommentMatch = sourceCode.match(/^\s*((?:\/\*[\s\S]*?\*\/\s*|\/\/[^\r\n]*\r?\n\s*)+)/);
+            const leadingComment = leadingCommentMatch ? leadingCommentMatch[1] : '';
+            return /@pftr:scopeKey\s+\S/.test(leadingComment);
+        };
+
+        for (const sourceFile of getAllFiles(resolvedRootDir)) {
+            const lowerSourceFile = sourceFile.toLowerCase();
+            if (/\.d\.ts$/i.test(sourceFile) || !sourceExtensions.some((extension) => lowerSourceFile.endsWith(extension))) {
+                continue;
+            }
+
+            const relativeSourcePath = path.relative(resolvedRootDir, sourceFile);
+            const candidateOutputFile = path.join(outDir, relativeSourcePath).replace(/\.[^.]+$/, '.js');
+            if (!fs.existsSync(candidateOutputFile)) {
+                continue;
+            }
+
+            emittedOutputFiles.push(candidateOutputFile);
+            if (hasScopeKeyMarker(fs.readFileSync(sourceFile, 'utf8'))) {
+                rootOutputFileSet.add(path.resolve(candidateOutputFile));
+            }
+        }
+
+        if (rootOutputFileSet.size === 0) {
+            // No emitted script declared a scopeKey, so instrument every emitted module.
+            filteredOutputFiles = emittedOutputFiles;
+        } else {
+            const emittedOutputSet = new Set(emittedOutputFiles.map((filePath) => path.resolve(filePath)));
+            const collectLocalDependencies = (moduleSource) => {
+                const specifiers = new Set();
+                const defineMatch = moduleSource.match(/define\(\s*\[(.*?)\]/s);
+                if (defineMatch) {
+                    for (const match of defineMatch[1].matchAll(/['"](\.[^'"]+)['"]/g)) {
+                        specifiers.add(match[1]);
+                    }
+                }
+
+                for (const match of moduleSource.matchAll(/require\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+                    specifiers.add(match[1]);
+                }
+
+                return specifiers;
+            };
+
+            const visited = new Set();
+            const queue = [];
+            for (const resolvedRootFile of rootOutputFileSet) {
+                if (!visited.has(resolvedRootFile)) {
+                    visited.add(resolvedRootFile);
+                    queue.push(resolvedRootFile);
+                }
+            }
+
+            while (queue.length > 0) {
+                const currentFile = queue.shift();
+                let moduleSource;
+                try {
+                    moduleSource = fs.readFileSync(currentFile, 'utf8');
+                } catch (error) {
+                    continue;
+                }
+
+                const currentDir = path.dirname(currentFile);
+                for (const specifier of collectLocalDependencies(moduleSource)) {
+                    const dependencyFile = path.resolve(currentDir, `${specifier}.js`);
+                    if (visited.has(dependencyFile) || !emittedOutputSet.has(dependencyFile)) {
+                        continue;
+                    }
+
+                    visited.add(dependencyFile);
+                    queue.push(dependencyFile);
+                }
+            }
+
+            filteredOutputFiles = Array.from(visited);
+        }
+    } else {
+        filteredOutputFiles = getAllFiles(outDir, {
+            shouldSkipDir(dirPath) {
+                return normalizeSlashes(dirPath) === normalizedWrapperOutputDir;
+            },
+        }).filter((filePath) => filePath.endsWith('.js'));
+    }
 
     for (const outputFile of filteredOutputFiles) {
         const sourceText = fs.readFileSync(outputFile, 'utf8');
@@ -339,9 +466,13 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
             return toModuleId(outputFile, targetFile);
         };
 
+        // Only attach the side-effect bootstrap to root entry scripts and to modules that actually had
+        // functions wrapped. A leaf/constants module with nothing instrumented has no telemetry to set
+        // up, so it is left without the dependency (and therefore untouched).
+        const attachBootstrap = rootOutputFileSet.has(path.resolve(outputFile)) || Boolean(instrumentedResult);
         const rewrittenText = prependAmdDependencies(
             rewriteRequireCalls(rewriteDefineDependencies(transformedSourceText, resolveSpecifier), resolveSpecifier),
-            bootstrapFiles.map((bootstrapFile) => toModuleId(outputFile, bootstrapFile)),
+            attachBootstrap ? bootstrapFiles.map((bootstrapFile) => toModuleId(outputFile, bootstrapFile)) : [],
         );
 
         if (rewrittenText !== sourceText) {

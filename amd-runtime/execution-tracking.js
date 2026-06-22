@@ -23,6 +23,9 @@ define(["require", "exports"], function (require, exports) {
         }
         return String(value).trim();
     }
+    function normalizePositive(value) {
+        return Number.isFinite(value) && value > 0 ? value : 0;
+    }
     function makeId(prefix, startedAt) {
         var randomComponent = Math.floor(Math.random() * 0xffffff).toString(36);
         return "".concat(prefix, "_").concat(startedAt.getTime().toString(36), "_").concat(randomComponent);
@@ -93,7 +96,12 @@ define(["require", "exports"], function (require, exports) {
         }
         return null;
     }
-    function recordFunctionInvocation(context) {
+    function recordFunctionInvocation(context, startedAt, endedAt, startUsage, endUsage, parent) {
+        if (startedAt === void 0) { startedAt = 0; }
+        if (endedAt === void 0) { endedAt = 0; }
+        if (startUsage === void 0) { startUsage = 0; }
+        if (endUsage === void 0) { endUsage = 0; }
+        if (parent === void 0) { parent = {}; }
         var activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
         if (!activeExecution) {
             return;
@@ -106,10 +114,22 @@ define(["require", "exports"], function (require, exports) {
         if (!functionName || !modulePath) {
             return;
         }
-        var observationKey = "".concat(modulePath, "::").concat(functionName);
+        var startMs = normalizePositive(startedAt);
+        var endMs = normalizePositive(endedAt);
+        var startUnits = normalizePositive(startUsage);
+        var endUnits = normalizePositive(endUsage);
+        var durationMs = endMs > startMs ? endMs - startMs : 0;
+        var usage = startUnits > 0 && endUnits > 0 && startUnits >= endUnits ? startUnits - endUnits : 0;
+        var parentFunctionName = normalizeText(parent.parentFunctionName);
+        var parentModulePath = normalizeText(parent.parentModulePath);
+        var observationKey = "".concat(parentModulePath, "::").concat(parentFunctionName, ">>").concat(modulePath, "::").concat(functionName);
         var existingSummary = activeExecution.observedFunctions.get(observationKey);
         if (existingSummary) {
             existingSummary.count += 1;
+            existingSummary.totalDurationMs += durationMs;
+            existingSummary.totalUsage += usage;
+            existingSummary.startedAt = lowestPositive(existingSummary.startedAt, startMs);
+            existingSummary.endedAt = Math.max(existingSummary.endedAt, endMs);
             return;
         }
         activeExecution.observedFunctions.set(observationKey, {
@@ -117,6 +137,21 @@ define(["require", "exports"], function (require, exports) {
             modulePath: modulePath,
             filePath: normalizeText(context.filePath),
             count: 1,
+            startedAt: startMs,
+            endedAt: endMs,
+            totalDurationMs: durationMs,
+            totalUsage: usage,
+            parentFunctionName: parentFunctionName,
+            parentModulePath: parentModulePath,
         });
+    }
+    function lowestPositive(existing, candidate) {
+        if (candidate <= 0) {
+            return existing;
+        }
+        if (existing <= 0) {
+            return candidate;
+        }
+        return Math.min(existing, candidate);
     }
 });

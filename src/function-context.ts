@@ -1,5 +1,7 @@
 import { recordFunctionInvocation } from './execution-tracking';
 
+declare const require: <T = unknown>(moduleName: string) => T;
+
 export interface FunctionCallerContext {
     functionName: string;
     functionContext: string;
@@ -13,10 +15,34 @@ export interface FunctionCallerContext {
 
 const functionContextStack: FunctionCallerContext[] = [];
 
+let cachedRuntime: typeof import('N/runtime') | null = null;
+
 function cloneFunctionContext(context: FunctionCallerContext): FunctionCallerContext {
     return {
         ...context,
     };
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+    return Boolean(value) && typeof (value as { then?: unknown }).then === 'function';
+}
+
+function loadRuntimeModule(): typeof import('N/runtime') {
+    const loaded = require<typeof import('N/runtime')>('N/runtime');
+    cachedRuntime = loaded;
+    return loaded;
+}
+
+// Reads remaining governance units for the current script. Returns 0 when N/runtime is unavailable
+// (e.g. outside SuiteScript / in tests) so callers can treat 0 as "not captured".
+function readRemainingUsage(): number {
+    try {
+        const runtimeModule = cachedRuntime ?? loadRuntimeModule();
+        const remaining = runtimeModule.getCurrentScript().getRemainingUsage();
+        return typeof remaining === 'number' && remaining > 0 ? remaining : 0;
+    } catch (_error) {
+        return 0;
+    }
 }
 
 function removeFunctionContext(context: FunctionCallerContext): void {
@@ -66,38 +92,43 @@ export function getFunctionContextStack(): FunctionCallerContext[] {
 
 export function withFunctionContext<T>(context: FunctionCallerContext, work: () => T): T {
     const trackedContext = cloneFunctionContext(context);
-    let didCleanup = false;
+    const parentContext = getPreferredActiveFunctionContext();
+    const startedAt = Date.now();
+    const startUsage = readRemainingUsage();
+    let didFinish = false;
 
-    const cleanup = (): void => {
-        if (didCleanup) {
+    const finish = (): void => {
+        if (didFinish) {
             return;
         }
 
-        didCleanup = true;
+        didFinish = true;
+        recordFunctionInvocation(trackedContext, startedAt, Date.now(), startUsage, readRemainingUsage(), {
+            parentFunctionName: parentContext?.functionName,
+            parentModulePath: parentContext?.modulePath || parentContext?.filePath,
+        });
         removeFunctionContext(trackedContext);
     };
 
     functionContextStack.push(trackedContext);
-    recordFunctionInvocation(trackedContext);
 
     try {
         const result = work();
 
-        if (result && typeof (result as { then?: unknown }).then === 'function') {
-            const asyncResult = result as unknown as PromiseLike<unknown>;
-            return asyncResult.then((value) => {
-                cleanup();
+        if (isPromiseLike(result)) {
+            return result.then((value) => {
+                finish();
                 return value;
             }, (error) => {
-                cleanup();
+                finish();
                 throw error;
             }) as T;
         }
 
-        cleanup();
+        finish();
         return result;
     } catch (error) {
-        cleanup();
+        finish();
         throw error;
     }
 }
