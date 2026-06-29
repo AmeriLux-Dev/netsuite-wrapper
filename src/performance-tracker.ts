@@ -106,6 +106,10 @@ function getNsCache(): typeof import('N/cache') {
     return require<typeof import('N/cache')>('N/cache');
 }
 
+function getNsFormat(): typeof import('N/format') {
+    return require<typeof import('N/format')>('N/format');
+}
+
 function getNsLog(): typeof import('N/log') {
     return require<typeof import('N/log')>('N/log');
 }
@@ -315,7 +319,7 @@ function resolveTelemetryMode(scopeKey: string): TelemetryMode {
     }
 }
 
-function formatTimestamp(date: Date): string {
+export function formatLocalParts(date: Date): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -323,6 +327,32 @@ function formatTimestamp(date: Date): string {
     const minutes = String(date.getMinutes()).padStart(2, '0');
     const seconds = String(date.getSeconds()).padStart(2, '0');
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// Server-side SuiteScript Date getters report the server timezone (Pacific), not the
+// account/user timezone, so naively formatting an instant skews every timestamp by the
+// difference between the two. Re-express the instant as the current user's preferred-timezone
+// wall clock: format.format with DATETIMETZ and no explicit timezone uses that preference, and
+// re-parsing the result as a timezone-naive DATETIME yields a Date whose server-local getters
+// read back those preferred-timezone wall-clock components. Returns null on any failure so the
+// caller can fall back to the unconverted (server-local) timestamp rather than throw.
+export function convertToUserTimezone(date: Date): Date | null {
+    try {
+        const nsFormat = getNsFormat();
+        const userWallClock = nsFormat.format({ value: date, type: nsFormat.Type.DATETIMETZ });
+        const reparsed = nsFormat.parse({ value: userWallClock, type: nsFormat.Type.DATETIME });
+        if (reparsed instanceof Date && !Number.isNaN(reparsed.getTime())) {
+            return reparsed;
+        }
+
+        return null;
+    } catch (_error) {
+        return null;
+    }
+}
+
+export function formatTimestamp(date: Date): string {
+    return formatLocalParts(convertToUserTimezone(date) || date);
 }
 
 function getCurrentScriptMetadata() {

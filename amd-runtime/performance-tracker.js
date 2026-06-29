@@ -12,6 +12,9 @@ var __assign = (this && this.__assign) || function () {
 define(["require", "exports", "./function-context", "./execution-tracking"], function (require, exports, function_context_1, execution_tracking_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.formatLocalParts = formatLocalParts;
+    exports.convertToUserTimezone = convertToUserTimezone;
+    exports.formatTimestamp = formatTimestamp;
     exports.runTrackedScriptEntry = runTrackedScriptEntry;
     exports.createPerformanceTrackerSink = createPerformanceTrackerSink;
     var EXECUTION_RECORD_TYPE = 'customrecord_ptrk_exec_span';
@@ -57,6 +60,9 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
     var deferredSpanQueues = new Map();
     function getNsCache() {
         return require('N/cache');
+    }
+    function getNsFormat() {
+        return require('N/format');
     }
     function getNsLog() {
         return require('N/log');
@@ -228,7 +234,7 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
             return 'diagnostic';
         }
     }
-    function formatTimestamp(date) {
+    function formatLocalParts(date) {
         var year = date.getFullYear();
         var month = String(date.getMonth() + 1).padStart(2, '0');
         var day = String(date.getDate()).padStart(2, '0');
@@ -236,6 +242,30 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         var minutes = String(date.getMinutes()).padStart(2, '0');
         var seconds = String(date.getSeconds()).padStart(2, '0');
         return "".concat(year, "-").concat(month, "-").concat(day, " ").concat(hours, ":").concat(minutes, ":").concat(seconds);
+    }
+    // Server-side SuiteScript Date getters report the server timezone (Pacific), not the
+    // account/user timezone, so naively formatting an instant skews every timestamp by the
+    // difference between the two. Re-express the instant as the current user's preferred-timezone
+    // wall clock: format.format with DATETIMETZ and no explicit timezone uses that preference, and
+    // re-parsing the result as a timezone-naive DATETIME yields a Date whose server-local getters
+    // read back those preferred-timezone wall-clock components. Returns null on any failure so the
+    // caller can fall back to the unconverted (server-local) timestamp rather than throw.
+    function convertToUserTimezone(date) {
+        try {
+            var nsFormat = getNsFormat();
+            var userWallClock = nsFormat.format({ value: date, type: nsFormat.Type.DATETIMETZ });
+            var reparsed = nsFormat.parse({ value: userWallClock, type: nsFormat.Type.DATETIME });
+            if (reparsed instanceof Date && !Number.isNaN(reparsed.getTime())) {
+                return reparsed;
+            }
+            return null;
+        }
+        catch (_error) {
+            return null;
+        }
+    }
+    function formatTimestamp(date) {
+        return formatLocalParts(convertToUserTimezone(date) || date);
     }
     function getCurrentScriptMetadata() {
         var currentScript = getNsRuntime().getCurrentScript();
