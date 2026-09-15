@@ -85,8 +85,19 @@ Example:
 module.exports = {
     telemetryBootstrap: {
         integration: 'performance-tracker',
+        scopeKey: 'app:my-app', // tracks every @NScriptType entry under this PerformanceTracker scope
+        recordExport: true, // spans to customrecord_ptrk_exec_span (default)
+        // httpsExport: { url: 'https://logs.example.com/ingest', secretId: 'custsecret_my_app_telemetry' },
     },
 };
+```
+
+The scope key can also be given to the helper directly, which wins over the config file:
+
+```js
+module.exports = applyNetSuiteWrapperWebpack(config, {
+    instrumentation: { defaultScopeKey: 'app:my-app' },
+});
 ```
 
 Disable auto bootstrap:

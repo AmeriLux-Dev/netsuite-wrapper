@@ -13,6 +13,6 @@ Common pattern across all builders:
 2. Keep normal `N/*` imports in source files.
 3. Add the wrapper integration in the build config.
 4. Build normally.
-5. Add `netsuite-wrapper.config.js` only if you need custom sink bootstrap or extra bootstrap modules.
+5. Add `netsuite-wrapper.config.js` to name the PerformanceTracker scope key, choose exporters (records, HTTPS), or add bootstrap modules.
 
 `netsuite-wrapper.config.js` is executed through Node's `require(...)` during the build, so only use it from trusted project code.

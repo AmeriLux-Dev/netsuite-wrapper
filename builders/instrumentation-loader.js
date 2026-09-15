@@ -15,6 +15,7 @@ module.exports = function instrumentationLoader(source, inputSourceMap) {
         functionContextModule: options.functionContextModule,
         trackedScriptEntryModule: options.trackedScriptEntryModule,
         instrumentationSource: options.instrumentationSource || DEFAULT_INSTRUMENTATION_SOURCE,
+        defaultScopeKey: options.defaultScopeKey || '',
         sourceMap: Boolean(this.sourceMap),
         inputSourceMap,
     });

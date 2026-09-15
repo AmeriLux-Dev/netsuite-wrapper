@@ -1,3 +1,14 @@
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 define(["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -13,6 +24,9 @@ define(["require", "exports"], function (require, exports) {
     var MAX_CHUNK_DETAIL_LENGTH = 3980;
     function getNsLog() {
         return require('N/log');
+    }
+    function getNsRuntime() {
+        return require('N/runtime');
     }
     var traceLogEnabled = false;
     function isTraceLogEnabled() {
@@ -64,6 +78,43 @@ define(["require", "exports"], function (require, exports) {
                 message: error instanceof Error ? error.message : String(error),
             });
             return null;
+        }
+    }
+    // Builds the structured entry exporters receive and queues it on the active run. Only runs when a
+    // tracked execution is active (otherwise there is no run to batch with) and only when some exporter
+    // wants log entries (otherwise the argument snapshot would be paid for nothing). The N/log write
+    // happens regardless; this is the second destination, never a replacement.
+    function forwardLogEntry(method, normalizedCall, activeExecution, activeFunctionContext) {
+        if (!(activeExecution === null || activeExecution === void 0 ? void 0 : activeExecution.executionId)) {
+            return;
+        }
+        try {
+            var telemetryExporter = require('./telemetry-exporter');
+            if (!telemetryExporter.hasLogAcceptingTelemetryExporter()) {
+                return;
+            }
+            var functionContext = require('./function-context');
+            var scriptId = '';
+            var deploymentId = '';
+            try {
+                var currentScript = getNsRuntime().getCurrentScript();
+                scriptId = normalizeTitle(currentScript.id);
+                deploymentId = normalizeTitle(currentScript.deploymentId);
+            }
+            catch (_runtimeError) {
+                // Outside SuiteScript there is no current script.
+            }
+            // The entry names the innermost application function (wrapper-internal and infrastructure
+            // frames skipped), the same frame whose arguments are snapshotted; the N/log tag keeps
+            // using the raw top of the stack as before.
+            var preferredFunctionContext = functionContext.getPreferredActiveFunctionContext() || activeFunctionContext;
+            var functionArguments = functionContext.snapshotActiveFunctionArguments();
+            telemetryExporter.enqueueTelemetryLogEntry(activeExecution.executionId, __assign({ level: method, title: normalizedCall.title, details: normalizedCall.details === undefined ? null : normalizedCall.details, timestamp: new Date().toISOString(), executionId: activeExecution.executionId, flowId: activeExecution.flowId || '', scriptId: scriptId, deploymentId: deploymentId, functionName: normalizeTitle(preferredFunctionContext === null || preferredFunctionContext === void 0 ? void 0 : preferredFunctionContext.functionName), functionModulePath: normalizeTitle((preferredFunctionContext === null || preferredFunctionContext === void 0 ? void 0 : preferredFunctionContext.modulePath) || (preferredFunctionContext === null || preferredFunctionContext === void 0 ? void 0 : preferredFunctionContext.filePath)), callChain: functionContext.getFunctionCallChainLabel() }, (functionArguments ? { functionArguments: functionArguments } : {})));
+        }
+        catch (error) {
+            emitTraceLog('forwardLogEntry.error', {
+                message: error instanceof Error ? error.message : String(error),
+            });
         }
     }
     function normalizeTitle(value) {
@@ -201,6 +252,7 @@ define(["require", "exports"], function (require, exports) {
                 details: line,
             });
         }
+        forwardLogEntry(method, normalizedCall, activeExecution, activeFunctionContext);
     }
     function debug(titleOrOptions, details) {
         emitLog('debug', titleOrOptions, details);

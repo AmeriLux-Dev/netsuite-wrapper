@@ -12,10 +12,14 @@ var __assign = (this && this.__assign) || function () {
 define(["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.hasActiveTrackedExecution = hasActiveTrackedExecution;
     exports.getActiveTrackedExecutionSnapshot = getActiveTrackedExecutionSnapshot;
     exports.startTrackedScriptExecution = startTrackedScriptExecution;
     exports.finishTrackedScriptExecution = finishTrackedScriptExecution;
     exports.recordFunctionInvocation = recordFunctionInvocation;
+    exports.recordFunctionError = recordFunctionError;
+    var MAX_OBSERVED_ERRORS = 10;
+    var MAX_ERROR_STACK_LENGTH = 2000;
     var trackedExecutionStack = [];
     function normalizeText(value) {
         if (value === null || value === undefined) {
@@ -57,7 +61,11 @@ define(["require", "exports"], function (require, exports) {
                 }
                 return left.functionName.localeCompare(right.functionName);
             }),
+            observedErrors: state.observedErrors.map(function (observedError) { return (__assign({}, observedError)); }),
         };
+    }
+    function hasActiveTrackedExecution() {
+        return trackedExecutionStack.length > 0;
     }
     function getActiveTrackedExecutionSnapshot() {
         var activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
@@ -76,6 +84,8 @@ define(["require", "exports"], function (require, exports) {
             modulePath: normalizeText(metadata.modulePath),
             scriptType: normalizeText(metadata.scriptType),
             observedFunctions: new Map(),
+            observedErrors: [],
+            seenErrors: new WeakSet(),
         };
         trackedExecutionStack.push(activeExecution);
         return toSnapshot(activeExecution);
@@ -144,6 +154,29 @@ define(["require", "exports"], function (require, exports) {
             parentFunctionName: parentFunctionName,
             parentModulePath: parentModulePath,
         });
+    }
+    /**
+     * Records an error leaving an instrumented function on the active run. The same error object is
+     * recorded once, at the innermost function it left, however many callers rethrow it. Returns true
+     * when the error was recorded now.
+     */
+    function recordFunctionError(context, error, functionArguments) {
+        var activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
+        if (!activeExecution) {
+            return false;
+        }
+        if (error !== null && typeof error === 'object') {
+            if (activeExecution.seenErrors.has(error)) {
+                return false;
+            }
+            activeExecution.seenErrors.add(error);
+        }
+        if (activeExecution.observedErrors.length >= MAX_OBSERVED_ERRORS) {
+            return false;
+        }
+        var errorObject = (error !== null && typeof error === 'object' ? error : {});
+        activeExecution.observedErrors.push(__assign({ functionName: normalizeText(context.functionName), modulePath: normalizeText(context.modulePath) || normalizeText(context.filePath), filePath: normalizeText(context.filePath), errorName: normalizeText(errorObject.name), message: normalizeText(errorObject.message) || (typeof error === 'object' ? '' : normalizeText(error)), stack: normalizeText(errorObject.stack).slice(0, MAX_ERROR_STACK_LENGTH) }, (functionArguments ? { functionArguments: functionArguments } : {})));
+        return true;
     }
     function lowestPositive(existing, candidate) {
         if (candidate <= 0) {

@@ -27,17 +27,36 @@ export interface ObservedFunctionParent {
     parentModulePath?: string;
 }
 
+/** An error thrown out of an instrumented function, recorded once at the innermost function it left. */
+export interface ObservedFunctionError {
+    functionName: string;
+    modulePath: string;
+    filePath: string;
+    errorName: string;
+    message: string;
+    stack: string;
+    /** The failing function's arguments, snapshotted; absent when the function opted out of capture. */
+    functionArguments?: Record<string, unknown>;
+}
+
 export interface ActiveTrackedExecutionSnapshot extends TrackedScriptEntryMetadata {
     executionId: string;
     flowId: string;
     observedFunctions: ObservedFunctionSummary[];
+    observedErrors: ObservedFunctionError[];
 }
 
 type ActiveTrackedExecutionState = TrackedScriptEntryMetadata & {
     executionId: string;
     flowId: string;
     observedFunctions: Map<string, ObservedFunctionSummary>;
+    observedErrors: ObservedFunctionError[];
+    /** Error objects already recorded, so the same error is not recorded again at every function it propagates through. */
+    seenErrors: WeakSet<object>;
 };
+
+const MAX_OBSERVED_ERRORS = 10;
+const MAX_ERROR_STACK_LENGTH = 2000;
 
 const trackedExecutionStack: ActiveTrackedExecutionState[] = [];
 
@@ -91,7 +110,12 @@ function toSnapshot(state: ActiveTrackedExecutionState): ActiveTrackedExecutionS
 
                 return left.functionName.localeCompare(right.functionName);
             }),
+        observedErrors: state.observedErrors.map((observedError) => ({ ...observedError })),
     };
+}
+
+export function hasActiveTrackedExecution(): boolean {
+    return trackedExecutionStack.length > 0;
 }
 
 export function getActiveTrackedExecutionSnapshot(): ActiveTrackedExecutionSnapshot | null {
@@ -111,6 +135,8 @@ export function startTrackedScriptExecution(metadata: TrackedScriptEntryMetadata
         modulePath: normalizeText(metadata.modulePath),
         scriptType: normalizeText(metadata.scriptType),
         observedFunctions: new Map<string, ObservedFunctionSummary>(),
+        observedErrors: [],
+        seenErrors: new WeakSet<object>(),
     };
 
     trackedExecutionStack.push(activeExecution);
@@ -185,6 +211,42 @@ export function recordFunctionInvocation(context: FunctionCallerContext, started
         parentFunctionName,
         parentModulePath,
     });
+}
+
+/**
+ * Records an error leaving an instrumented function on the active run. The same error object is
+ * recorded once, at the innermost function it left, however many callers rethrow it. Returns true
+ * when the error was recorded now.
+ */
+export function recordFunctionError(context: FunctionCallerContext, error: unknown, functionArguments?: Record<string, unknown>): boolean {
+    const activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
+    if (!activeExecution) {
+        return false;
+    }
+
+    if (error !== null && typeof error === 'object') {
+        if (activeExecution.seenErrors.has(error)) {
+            return false;
+        }
+
+        activeExecution.seenErrors.add(error);
+    }
+
+    if (activeExecution.observedErrors.length >= MAX_OBSERVED_ERRORS) {
+        return false;
+    }
+
+    const errorObject = (error !== null && typeof error === 'object' ? error : {}) as { name?: unknown; message?: unknown; stack?: unknown };
+    activeExecution.observedErrors.push({
+        functionName: normalizeText(context.functionName),
+        modulePath: normalizeText(context.modulePath) || normalizeText(context.filePath),
+        filePath: normalizeText(context.filePath),
+        errorName: normalizeText(errorObject.name),
+        message: normalizeText(errorObject.message) || (typeof error === 'object' ? '' : normalizeText(error)),
+        stack: normalizeText(errorObject.stack).slice(0, MAX_ERROR_STACK_LENGTH),
+        ...(functionArguments ? { functionArguments } : {}),
+    });
+    return true;
 }
 
 function lowestPositive(existing: number, candidate: number): number {
