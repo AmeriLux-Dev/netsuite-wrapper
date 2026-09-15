@@ -15,7 +15,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # npm@latest (12.x) needs Node 22.22+; trusted publishing needs npm 11.5+
           registry-url: 'https://registry.npmjs.org'
 
       - run: npm install -g npm@latest
