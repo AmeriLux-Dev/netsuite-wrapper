@@ -114,6 +114,10 @@ function toSnapshot(state: ActiveTrackedExecutionState): ActiveTrackedExecutionS
     };
 }
 
+export function hasActiveTrackedExecution(): boolean {
+    return trackedExecutionStack.length > 0;
+}
+
 export function getActiveTrackedExecutionSnapshot(): ActiveTrackedExecutionSnapshot | null {
     const activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];
     return activeExecution ? toSnapshot(activeExecution) : null;

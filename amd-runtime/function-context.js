@@ -139,11 +139,15 @@ define(["require", "exports", "./execution-tracking", "./value-snapshot"], funct
             removeFunctionContext(trackedContext);
         };
         var fail = function (error) {
-            try {
-                (0, execution_tracking_1.recordFunctionError)(trackedContext, error, snapshotContextArguments(trackedContext));
-            }
-            catch (_recordError) {
-                // Recording the failure must never replace the failure.
+            // Arguments are serialised only when a tracked run will keep the record; an untracked
+            // script pays nothing extra on its error path.
+            if ((0, execution_tracking_1.hasActiveTrackedExecution)()) {
+                try {
+                    (0, execution_tracking_1.recordFunctionError)(trackedContext, error, snapshotContextArguments(trackedContext));
+                }
+                catch (_recordError) {
+                    // Recording the failure must never replace the failure.
+                }
             }
             finish();
         };

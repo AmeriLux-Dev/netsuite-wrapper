@@ -12,6 +12,7 @@ var __assign = (this && this.__assign) || function () {
 define(["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.hasActiveTrackedExecution = hasActiveTrackedExecution;
     exports.getActiveTrackedExecutionSnapshot = getActiveTrackedExecutionSnapshot;
     exports.startTrackedScriptExecution = startTrackedScriptExecution;
     exports.finishTrackedScriptExecution = finishTrackedScriptExecution;
@@ -62,6 +63,9 @@ define(["require", "exports"], function (require, exports) {
             }),
             observedErrors: state.observedErrors.map(function (observedError) { return (__assign({}, observedError)); }),
         };
+    }
+    function hasActiveTrackedExecution() {
+        return trackedExecutionStack.length > 0;
     }
     function getActiveTrackedExecutionSnapshot() {
         var activeExecution = trackedExecutionStack[trackedExecutionStack.length - 1];

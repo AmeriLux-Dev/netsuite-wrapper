@@ -1,4 +1,4 @@
-import { recordFunctionError, recordFunctionInvocation } from './execution-tracking';
+import { hasActiveTrackedExecution, recordFunctionError, recordFunctionInvocation } from './execution-tracking';
 import { snapshotFunctionArguments } from './value-snapshot';
 
 declare const require: <T = unknown>(moduleName: string) => T;
@@ -161,10 +161,14 @@ export function withFunctionContext<T>(context: FunctionCallerContext, work: () 
     };
 
     const fail = (error: unknown): void => {
-        try {
-            recordFunctionError(trackedContext, error, snapshotContextArguments(trackedContext));
-        } catch (_recordError) {
-            // Recording the failure must never replace the failure.
+        // Arguments are serialised only when a tracked run will keep the record; an untracked
+        // script pays nothing extra on its error path.
+        if (hasActiveTrackedExecution()) {
+            try {
+                recordFunctionError(trackedContext, error, snapshotContextArguments(trackedContext));
+            } catch (_recordError) {
+                // Recording the failure must never replace the failure.
+            }
         }
 
         finish();
