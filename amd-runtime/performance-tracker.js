@@ -9,15 +9,15 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
-define(["require", "exports", "./function-context", "./execution-tracking"], function (require, exports, function_context_1, execution_tracking_1) {
+define(["require", "exports", "./function-context", "./execution-tracking", "./telemetry-exporter", "./netsuite-record-exporter"], function (require, exports, function_context_1, execution_tracking_1, telemetry_exporter_1, netsuite_record_exporter_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.formatLocalParts = formatLocalParts;
     exports.convertToUserTimezone = convertToUserTimezone;
     exports.formatTimestamp = formatTimestamp;
     exports.runTrackedScriptEntry = runTrackedScriptEntry;
+    exports.wrapTrackedScriptEntryFunction = wrapTrackedScriptEntryFunction;
     exports.createPerformanceTrackerSink = createPerformanceTrackerSink;
-    var EXECUTION_RECORD_TYPE = 'customrecord_ptrk_exec_span';
     var SCOPE_RECORD_TYPE = 'customrecord_ptrk_scope';
     var TELEMETRY_SCOPE_CACHE = 'ptrk_scope_modes';
     var DEFAULT_SCOPE_TTL_SECONDS = 1800;
@@ -66,9 +66,6 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
     }
     function getNsLog() {
         return require('N/log');
-    }
-    function getNsRecord() {
-        return require('N/record');
     }
     function getNsRuntime() {
         return require('N/runtime');
@@ -139,7 +136,7 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         if (value === 'off' || value === 'boundary' || value === 'diagnostic') {
             return value;
         }
-        return 'diagnostic';
+        return 'boundary';
     }
     function hasScopeExpired(expiresAt) {
         if (!expiresAt) {
@@ -206,14 +203,14 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         }
         catch (_error) {
             return {
-                mode: 'diagnostic',
+                mode: 'boundary',
                 expiresAt: '',
             };
         }
     }
     function resolveTelemetryMode(scopeKey) {
         if (!scopeKey) {
-            return 'diagnostic';
+            return 'boundary';
         }
         try {
             var scopeCache = getScopeCache();
@@ -231,7 +228,7 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
             return resolveModeFromScopeState(scopeState);
         }
         catch (_error) {
-            return 'diagnostic';
+            return 'boundary';
         }
     }
     function formatLocalParts(date) {
@@ -613,7 +610,7 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
     }
     function buildRootExecutionDetail(metadata, execution, detail) {
         var detailRecord = getDetailRecord(detail);
-        return __assign(__assign({}, detailRecord), { entryKind: normalizeText(metadata.entryKind), entryKey: normalizeText(metadata.entryKey), filePath: normalizeText(metadata.filePath), modulePath: normalizeText(metadata.modulePath), observedFunctionCount: execution.observedFunctions.length, observedFunctions: execution.observedFunctions });
+        return __assign(__assign({}, detailRecord), { entryKind: normalizeText(metadata.entryKind), entryKey: normalizeText(metadata.entryKey), filePath: normalizeText(metadata.filePath), modulePath: normalizeText(metadata.modulePath), observedFunctionCount: execution.observedFunctions.length, observedFunctions: execution.observedFunctions, observedErrorCount: execution.observedErrors.length, observedErrors: execution.observedErrors });
     }
     function buildRootExecutionSpan(metadata, execution, status, startedAt, endedAt, detail, summaryOverride) {
         var currentScriptMetadata = getCurrentScriptMetadata();
@@ -655,74 +652,31 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
             wrapperAction: '',
         };
     }
-    function persistSpan(span) {
-        try {
-            var spanRecord = getNsRecord().create({
-                type: EXECUTION_RECORD_TYPE,
-                isDynamic: false,
-            });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.executionId, value: span.executionId });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.flowId, value: span.flowId });
-            if (span.parentExecutionId) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.parentExecutionId, value: span.parentExecutionId });
-            }
-            if (span.rootExecutionId) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.rootExecutionId, value: span.rootExecutionId });
-            }
-            if (span.spanRole) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.spanRole, value: span.spanRole });
-            }
-            if (span.entryKind) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.entryKind, value: span.entryKind });
-            }
-            if (span.entryKey) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.entryKey, value: span.entryKey });
-            }
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scriptId, value: span.scriptId });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scriptName, value: span.scriptName });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scriptType, value: span.scriptType });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.deploymentId, value: span.deploymentId });
-            if (span.scopeKey) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scopeKey, value: span.scopeKey });
-            }
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.stage, value: span.stage });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.operation, value: span.operation });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.transactionType, value: span.transactionType });
-            if (span.transactionId !== undefined) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.transactionId, value: span.transactionId });
-            }
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.startedAt, value: span.startedAt });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.endedAt, value: span.endedAt });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.durationMs, value: span.durationMs });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.status, value: span.status });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.context, value: span.context });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.summary, value: span.summary });
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.detail, value: span.detail });
-            if (span.functionName) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.functionName, value: span.functionName });
-            }
-            if (span.functionModulePath) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.functionModulePath, value: span.functionModulePath });
-            }
-            if (span.callChain) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.callChain, value: span.callChain });
-            }
-            if (span.wrapperModule) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.wrapperModule, value: span.wrapperModule });
-            }
-            if (span.wrapperAction) {
-                spanRecord.setValue({ fieldId: EXECUTION_FIELDS.wrapperAction, value: span.wrapperAction });
-            }
-            spanRecord.save({ enableSourcing: false, ignoreMandatoryFields: true });
+    function ensureDefaultExporter() {
+        if ((0, telemetry_exporter_1.getTelemetryExporters)().length === 0) {
+            (0, telemetry_exporter_1.registerTelemetryExporter)((0, netsuite_record_exporter_1.createNetSuiteRecordExporter)());
         }
-        catch (error) {
-            getNsLog().error({ title: 'netsuite-wrapper PerformanceTracker telemetry save failed', details: String(error) });
+    }
+    function dispatchSpanBatch(spans, execution, mode) {
+        var _a;
+        if (spans.length === 0 && !execution) {
+            return;
         }
+        ensureDefaultExporter();
+        var batch = {
+            executionId: normalizeText(execution === null || execution === void 0 ? void 0 : execution.executionId),
+            flowId: normalizeText(execution === null || execution === void 0 ? void 0 : execution.flowId),
+            scopeKey: normalizeText(execution === null || execution === void 0 ? void 0 : execution.scopeKey) || normalizeText((_a = spans[0]) === null || _a === void 0 ? void 0 : _a.scopeKey),
+            mode: mode === 'diagnostic' ? 'diagnostic' : 'boundary',
+            spans: spans,
+            logs: execution ? (0, telemetry_exporter_1.takeTelemetryLogEntries)(execution.executionId) : [],
+        };
+        (0, telemetry_exporter_1.dispatchTelemetryBatch)(batch);
     }
     function enqueueDeferredSpan(rootExecutionId, span) {
         var executionKey = normalizeText(rootExecutionId);
         if (!executionKey) {
-            persistSpan(span);
+            dispatchSpanBatch([span], null, 'diagnostic');
             return;
         }
         var existingQueue = deferredSpanQueues.get(executionKey);
@@ -732,18 +686,14 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         }
         deferredSpanQueues.set(executionKey, [span]);
     }
-    function flushDeferredSpans(rootExecutionId) {
+    function takeDeferredSpans(rootExecutionId) {
         var executionKey = normalizeText(rootExecutionId);
         if (!executionKey) {
-            return;
+            return [];
         }
-        var queuedSpans = deferredSpanQueues.get(executionKey);
-        if (!queuedSpans || queuedSpans.length === 0) {
-            deferredSpanQueues.delete(executionKey);
-            return;
-        }
+        var queuedSpans = deferredSpanQueues.get(executionKey) || [];
         deferredSpanQueues.delete(executionKey);
-        queuedSpans.forEach(function (span) { return persistSpan(span); });
+        return queuedSpans;
     }
     function normalizeSinkOptions(optionsOrScopeKey) {
         if (typeof optionsOrScopeKey === 'string') {
@@ -761,8 +711,9 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
         var execution = (0, execution_tracking_1.startTrackedScriptExecution)(metadata, startedAt);
         var finish = function (status, detail, summaryOverride) {
             var completedExecution = (0, execution_tracking_1.finishTrackedScriptExecution)(execution.executionId) || execution;
-            flushDeferredSpans(completedExecution.executionId);
-            persistSpan(buildRootExecutionSpan(metadata, completedExecution, status, startedAt, new Date(), detail, summaryOverride));
+            var spans = takeDeferredSpans(completedExecution.executionId);
+            spans.push(buildRootExecutionSpan(metadata, completedExecution, status, startedAt, new Date(), detail, summaryOverride));
+            dispatchSpanBatch(spans, completedExecution, telemetryMode);
         };
         try {
             var result = work();
@@ -797,10 +748,31 @@ define(["require", "exports", "./function-context", "./execution-tracking"], fun
             throw error;
         }
     }
+    /**
+     * Makes a function returned by a call (`export const post = defineRestlet(...)`) a tracked entry:
+     * every invocation runs inside runTrackedScriptEntry. Anything that is not a function is returned
+     * as is, so the build can apply it to any exported const initialised by a call.
+     */
+    function wrapTrackedScriptEntryFunction(metadata, target) {
+        if (typeof target !== 'function') {
+            return target;
+        }
+        var entryFunction = target;
+        var wrapped = function trackedScriptEntry() {
+            var _this = this;
+            var args = [];
+            for (var _i = 0; _i < arguments.length; _i++) {
+                args[_i] = arguments[_i];
+            }
+            return runTrackedScriptEntry(metadata, function () { return entryFunction.apply(_this, args); });
+        };
+        return wrapped;
+    }
     function createPerformanceTrackerSink(optionsOrScopeKey) {
         var options = normalizeSinkOptions(optionsOrScopeKey);
         var defaultScopeKey = normalizeText(options.defaultScopeKey);
         var activeSpans = [];
+        ensureDefaultExporter();
         return {
             isActive: function () {
                 return Boolean((0, execution_tracking_1.getActiveTrackedExecutionSnapshot)());

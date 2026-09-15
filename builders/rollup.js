@@ -6,6 +6,8 @@ const {
     createWrapperModuleRequest,
     isWrapperContext,
     loadNetSuiteWrapperConfig,
+    resolveDefaultScopeKey,
+    resolveExporterSettings,
 } = require('../lib/build-support');
 const {
     transformNetSuiteWrapperSource,
@@ -22,6 +24,9 @@ const RESOLVED_TRACE_LOG_BOOTSTRAP_ID = '\0netsuite-wrapper:trace-log-bootstrap'
 const CHUNK_LOG_BOOTSTRAP_ID = 'virtual:netsuite-wrapper:chunk-log-bootstrap';
 const RESOLVED_CHUNK_LOG_BOOTSTRAP_ID = '\0netsuite-wrapper:chunk-log-bootstrap';
 const LOG_MODULE_ID = 'virtual:netsuite-wrapper:log-module';
+const TELEMETRY_EXPORTER_MODULE_ID = 'virtual:netsuite-wrapper:telemetry-exporter-module';
+const RECORD_EXPORTER_MODULE_ID = 'virtual:netsuite-wrapper:record-exporter-module';
+const HTTPS_EXPORTER_MODULE_ID = 'virtual:netsuite-wrapper:https-exporter-module';
 
 function normalizeModuleId(id) {
     return typeof id === 'string' ? id.replace(/[?#].*$/, '') : '';
@@ -185,9 +190,25 @@ function createAutoBootstrapModuleSource(resolvedOptions) {
         return 'export {};';
     }
 
+    const exporterSettings = resolveExporterSettings(resolvedOptions.telemetryBootstrap) || {};
+    const exporterImportLines = [];
+    const exporterRegistrationLines = [];
+    if (exporterSettings.recordExport !== false || exporterSettings.httpsExport) {
+        exporterImportLines.push(`import { registerTelemetryExporter } from ${JSON.stringify(TELEMETRY_EXPORTER_MODULE_ID)};`);
+    }
+    if (exporterSettings.recordExport !== false) {
+        exporterImportLines.push(`import { createNetSuiteRecordExporter } from ${JSON.stringify(RECORD_EXPORTER_MODULE_ID)};`);
+        exporterRegistrationLines.push('    registerTelemetryExporter(createNetSuiteRecordExporter());');
+    }
+    if (exporterSettings.httpsExport) {
+        exporterImportLines.push(`import { createHttpsExporter } from ${JSON.stringify(HTTPS_EXPORTER_MODULE_ID)};`);
+        exporterRegistrationLines.push(`    registerTelemetryExporter(createHttpsExporter(${JSON.stringify(exporterSettings.httpsExport)}));`);
+    }
+
     return [
         `import { setWrapperTelemetrySink } from ${JSON.stringify(TELEMETRY_MODULE_ID)};`,
         `import * as sinkModule from ${JSON.stringify(SINK_MODULE_ID)};`,
+        ...exporterImportLines,
         `const sinkModuleName = ${JSON.stringify(resolvedOptions.telemetryBootstrap.sinkModule)};`,
         `const sinkExportName = ${JSON.stringify(resolvedOptions.telemetryBootstrap.sinkExport)};`,
         `const sinkOptions = ${JSON.stringify(resolvedOptions.telemetryBootstrap.scopeKey)} || undefined;`,
@@ -196,6 +217,7 @@ function createAutoBootstrapModuleSource(resolvedOptions) {
         '    if (activeSink) {',
         '        return activeSink;',
         '    }',
+        ...exporterRegistrationLines,
         '    const createSink = sinkExportName === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExportName];',
         '    if (typeof createSink !== "function") {',
         '        throw new Error(`netsuite-wrapper bootstrap could not find sink export "${sinkExportName}" in ${sinkModuleName}`);',
@@ -219,6 +241,7 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
     const overrideModules = resolvedOptions.modules || DEFAULT_OVERRIDE_MODULES;
     const overrideRequests = createOverrideRequestSet(overrideModules);
     const instrumentationOptions = resolveInstrumentationOptions(options);
+    const defaultScopeKey = resolveDefaultScopeKey(options);
     const entryIds = new Set();
     const bootstrapImportLines = createBootstrapImportLines(resolvedOptions);
 
@@ -253,6 +276,18 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
                     packageName,
                     runtimeDir,
                 });
+            }
+
+            if (source === TELEMETRY_EXPORTER_MODULE_ID) {
+                return createWrapperModuleRequest('telemetry-exporter', { packageName, runtimeDir });
+            }
+
+            if (source === RECORD_EXPORTER_MODULE_ID) {
+                return createWrapperModuleRequest('netsuite-record-exporter', { packageName, runtimeDir });
+            }
+
+            if (source === HTTPS_EXPORTER_MODULE_ID) {
+                return createWrapperModuleRequest('https-exporter', { packageName, runtimeDir });
             }
 
             if (source === SINK_MODULE_ID) {
@@ -315,6 +350,7 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
                 rootContext: options.rootContext || process.cwd(),
                 packageName,
                 instrumentationSource: instrumentationOptions.instrumentationSource,
+                defaultScopeKey,
             });
 
             if (!transformed) {

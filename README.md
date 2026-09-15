@@ -79,15 +79,66 @@ Each guide covers install, minimal config, instrumentation defaults, and the opt
 
 The wrapper's contract is the sink interface in `src/telemetry.ts`. A sink receives structured events with module-level operation metadata (`module`, `action`, `summary`, optional `detail`) and decides what to persist or forward.
 
-The bundled `performance-tracker` integration writes spans to the `customrecord_ptrk_exec_span` custom record schema, which is the format that the standalone PerformanceTracker NetSuite app consumes. Enable it through `netsuite-wrapper.config.js`:
+The bundled `performance-tracker` integration builds one span per tracked script run (the root) and one per wrapped `N/*` call inside it, and hands every run's spans and log lines to the registered **exporters** as one batch when the run ends. Enable it through `netsuite-wrapper.config.js`:
 
 ```js
 module.exports = {
     telemetryBootstrap: {
         integration: 'performance-tracker',
+        // Every @NScriptType entry file is tracked under this scope; a @pftr:scopeKey header tag overrides it per file.
+        scopeKey: 'app:my-app',
+        // Write spans to customrecord_ptrk_exec_span, the schema the PerformanceTracker NetSuite app reads. Default true.
+        recordExport: true,
+        // Also POST each run's spans and log lines as one JSON document to an external log system.
+        httpsExport: {
+            url: 'https://logs.example.com/ingest',
+            secretId: 'custsecret_my_app_telemetry', // a NetSuite API secret; the token itself never appears in code or config
+            // authorizationHeader: 'Authorization', authorizationScheme: 'Bearer', headers: { 'X-Tenant': 'x' }, source: 'my-app',
+        },
     },
 };
 ```
+
+### Scope modes
+
+A run's scope key is looked up in `customrecord_ptrk_scope` at the start of the run (cached for thirty minutes in `N/cache`). The scope's mode is the account-side switch, changed in the PerformanceTracker app without a redeploy:
+
+- `off`: the run is not tracked. Nothing is exported, nothing is queued.
+- `boundary`: the root span and the run's log lines are exported. Wrapped `N/*` calls are not persisted. This is the production setting: one record, one request per run.
+- `diagnostic`: everything, including a span per wrapped `N/*` call.
+
+A scope key with no row runs as `boundary`.
+
+### Tracked entry points
+
+With `scopeKey` set, every file whose header carries a supported `@NScriptType` (Restlet, Suitelet, MapReduceScript, UserEventScript) becomes a tracked script. Its exported entry functions (`export function post`, `export const onRequest = (context) => …`) run inside `runTrackedScriptEntry`, and so does an exported const initialised by a call (`export const post = defineRestlet(...)`), whose returned function is wrapped through `wrapTrackedScriptEntryFunction`.
+
+### What a log line carries
+
+Every wrapped `log.*` call still writes to `N/log` as before (see the tag and chunking notes below). Inside a tracked run it also becomes a structured entry for exporters that accept log entries: level, title, the details as passed (not the chunked string), timestamp, execution and flow ids, script and deployment ids, the enclosing function and module, the call chain of instrumented functions (`post -> roles -> loadUser`) and the enclosing function's **arguments**, snapshotted by parameter name.
+
+Argument capture costs nothing until it is used: the build passes the parameter values to the function-context helper as references, and they are serialised only when a log call inside the function asks for them or when the function throws. The snapshot is bounded (strings cut at 200 characters, five array items, twenty keys, two levels, two thousand characters in all; a NetSuite record collapses to its type and id). A function that receives credentials or personal data opts out with `@ptrk-ignore-arguments` in the comment above it; the same tag at the top of a file opts out every function in that file.
+
+An error thrown out of an instrumented function is recorded once, at the innermost function it left, with that function's arguments, in the root span's detail (`observedErrors`).
+
+### Exporters
+
+`recordExport` and `httpsExport` register the two bundled exporters from the generated bootstrap. A project that needs another destination, or a payload shape the `format` hook of `createHttpsExporter` cannot express through config, registers its own from a module listed in `bootstrapModules`:
+
+```js
+// telemetry-bootstrap.js, listed in netsuite-wrapper.config.js under bootstrapModules
+const { registerTelemetryExporter } = require('@amerilux/netsuite-wrapper/telemetry-exporter');
+
+registerTelemetryExporter({
+    name: 'my-collector',
+    acceptsLogEntries: true,
+    export(batch) {
+        // batch: { executionId, flowId, scopeKey, mode, spans, logs }
+    },
+});
+```
+
+An exporter that throws is reported to `N/log` and never stops the others or the script. When no exporter is registered at all, the record exporter is used, which is what earlier releases did.
 
 Or plug in a custom sink:
 

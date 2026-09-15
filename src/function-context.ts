@@ -1,4 +1,5 @@
-import { recordFunctionInvocation } from './execution-tracking';
+import { recordFunctionError, recordFunctionInvocation } from './execution-tracking';
+import { snapshotFunctionArguments } from './value-snapshot';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 
@@ -11,9 +12,16 @@ export interface FunctionCallerContext {
     methodName?: string;
     instrumentationSource: string;
     excludeFromObservedFunctions?: boolean;
+    /** Parameter names in order, written by the build; pairs with the argument values passed at call time. */
+    parameterNames?: string[];
 }
 
 const functionContextStack: FunctionCallerContext[] = [];
+
+// Argument values live beside the stack, never on the context object: contexts are cloned into
+// snapshots and span details, and raw arguments (records, large arrays) must not travel with them.
+// They are only read, and only then serialized, when a log call or an error asks for them.
+const argumentValuesByContext = new WeakMap<FunctionCallerContext, readonly unknown[]>();
 
 let cachedRuntime: typeof import('N/runtime') | null = null;
 
@@ -90,12 +98,54 @@ export function getFunctionContextStack(): FunctionCallerContext[] {
     return functionContextStack.map(cloneFunctionContext);
 }
 
-export function withFunctionContext<T>(context: FunctionCallerContext, work: () => T): T {
+function snapshotContextArguments(context: FunctionCallerContext): Record<string, unknown> | undefined {
+    const argumentValues = argumentValuesByContext.get(context);
+    if (!argumentValues) {
+        return undefined;
+    }
+
+    try {
+        return snapshotFunctionArguments(context.parameterNames || [], argumentValues);
+    } catch (_error) {
+        return undefined;
+    }
+}
+
+/**
+ * The arguments of the innermost instrumented application function, snapshotted now. Wrapper-internal
+ * and infrastructure frames are skipped, the same way the log tag picks its function. Undefined when
+ * nothing is on the stack or that function opted out of argument capture.
+ */
+export function snapshotActiveFunctionArguments(): Record<string, unknown> | undefined {
+    for (let index = functionContextStack.length - 1; index >= 0; index -= 1) {
+        const context = functionContextStack[index];
+        if (!isWrapperAdapterContext(context) && !isInfrastructureContext(context)) {
+            return snapshotContextArguments(context);
+        }
+    }
+
+    return undefined;
+}
+
+/** The instrumented functions currently on the stack, outermost first, as `name -> name -> name`. */
+export function getFunctionCallChainLabel(): string {
+    return functionContextStack
+        .filter((context) => !isWrapperAdapterContext(context) && !isInfrastructureContext(context))
+        .map((context) => context.functionName)
+        .filter(Boolean)
+        .join(' -> ');
+}
+
+export function withFunctionContext<T>(context: FunctionCallerContext, work: () => T, argumentValues?: readonly unknown[]): T {
     const trackedContext = cloneFunctionContext(context);
     const parentContext = getPreferredActiveFunctionContext();
     const startedAt = Date.now();
     const startUsage = readRemainingUsage();
     let didFinish = false;
+
+    if (argumentValues) {
+        argumentValuesByContext.set(trackedContext, argumentValues);
+    }
 
     const finish = (): void => {
         if (didFinish) {
@@ -110,6 +160,16 @@ export function withFunctionContext<T>(context: FunctionCallerContext, work: () 
         removeFunctionContext(trackedContext);
     };
 
+    const fail = (error: unknown): void => {
+        try {
+            recordFunctionError(trackedContext, error, snapshotContextArguments(trackedContext));
+        } catch (_recordError) {
+            // Recording the failure must never replace the failure.
+        }
+
+        finish();
+    };
+
     functionContextStack.push(trackedContext);
 
     try {
@@ -120,7 +180,7 @@ export function withFunctionContext<T>(context: FunctionCallerContext, work: () 
                 finish();
                 return value;
             }, (error) => {
-                finish();
+                fail(error);
                 throw error;
             }) as T;
         }
@@ -128,7 +188,7 @@ export function withFunctionContext<T>(context: FunctionCallerContext, work: () 
         finish();
         return result;
     } catch (error) {
-        finish();
+        fail(error);
         throw error;
     }
 }

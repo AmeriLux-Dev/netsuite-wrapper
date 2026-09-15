@@ -27,6 +27,10 @@ function getNsLog(): typeof import('N/log') {
     return require<typeof import('N/log')>('N/log');
 }
 
+function getNsRuntime(): typeof import('N/runtime') {
+    return require<typeof import('N/runtime')>('N/runtime');
+}
+
 let traceLogEnabled = false;
 
 export function isTraceLogEnabled(): boolean {
@@ -85,6 +89,58 @@ function getActiveFunctionContext(): ActiveFunctionContext | null {
             message: error instanceof Error ? error.message : String(error),
         });
         return null;
+    }
+}
+
+// Builds the structured entry exporters receive and queues it on the active run. Only runs when a
+// tracked execution is active (otherwise there is no run to batch with) and only when some exporter
+// wants log entries (otherwise the argument snapshot would be paid for nothing). The N/log write
+// happens regardless; this is the second destination, never a replacement.
+function forwardLogEntry(method: LogMethodName, normalizedCall: LogCallOptions, activeExecution: ActiveTrackedExecutionSnapshot | null, activeFunctionContext: ActiveFunctionContext | null): void {
+    if (!activeExecution?.executionId) {
+        return;
+    }
+
+    try {
+        const telemetryExporter = require<typeof import('./telemetry-exporter')>('./telemetry-exporter');
+        if (!telemetryExporter.hasLogAcceptingTelemetryExporter()) {
+            return;
+        }
+
+        const functionContext = require<typeof import('./function-context')>('./function-context');
+        let scriptId = '';
+        let deploymentId = '';
+        try {
+            const currentScript = getNsRuntime().getCurrentScript() as unknown as Record<string, unknown>;
+            scriptId = normalizeTitle(currentScript.id);
+            deploymentId = normalizeTitle(currentScript.deploymentId);
+        } catch (_runtimeError) {
+            // Outside SuiteScript there is no current script.
+        }
+
+        // The entry names the innermost application function (wrapper-internal and infrastructure
+        // frames skipped), the same frame whose arguments are snapshotted; the N/log tag keeps
+        // using the raw top of the stack as before.
+        const preferredFunctionContext = functionContext.getPreferredActiveFunctionContext() || activeFunctionContext;
+        const functionArguments = functionContext.snapshotActiveFunctionArguments();
+        telemetryExporter.enqueueTelemetryLogEntry(activeExecution.executionId, {
+            level: method,
+            title: normalizedCall.title,
+            details: normalizedCall.details === undefined ? null : normalizedCall.details,
+            timestamp: new Date().toISOString(),
+            executionId: activeExecution.executionId,
+            flowId: activeExecution.flowId || '',
+            scriptId,
+            deploymentId,
+            functionName: normalizeTitle(preferredFunctionContext?.functionName),
+            functionModulePath: normalizeTitle(preferredFunctionContext?.modulePath || preferredFunctionContext?.filePath),
+            callChain: functionContext.getFunctionCallChainLabel(),
+            ...(functionArguments ? { functionArguments } : {}),
+        });
+    } catch (error) {
+        emitTraceLog('forwardLogEntry.error', {
+            message: error instanceof Error ? error.message : String(error),
+        });
     }
 }
 
@@ -254,6 +310,8 @@ function emitLog(method: LogMethodName, titleOrOptions: string | LogCallOptions,
             details: line,
         });
     }
+
+    forwardLogEntry(method, normalizedCall, activeExecution, activeFunctionContext);
 }
 
 export function debug(options: LogCallOptions): void;

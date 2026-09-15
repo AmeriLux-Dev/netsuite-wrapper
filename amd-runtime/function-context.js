@@ -9,14 +9,20 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
-define(["require", "exports", "./execution-tracking"], function (require, exports, execution_tracking_1) {
+define(["require", "exports", "./execution-tracking", "./value-snapshot"], function (require, exports, execution_tracking_1, value_snapshot_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getActiveFunctionContext = getActiveFunctionContext;
     exports.getPreferredActiveFunctionContext = getPreferredActiveFunctionContext;
     exports.getFunctionContextStack = getFunctionContextStack;
+    exports.snapshotActiveFunctionArguments = snapshotActiveFunctionArguments;
+    exports.getFunctionCallChainLabel = getFunctionCallChainLabel;
     exports.withFunctionContext = withFunctionContext;
     var functionContextStack = [];
+    // Argument values live beside the stack, never on the context object: contexts are cloned into
+    // snapshots and span details, and raw arguments (records, large arrays) must not travel with them.
+    // They are only read, and only then serialized, when a log call or an error asks for them.
+    var argumentValuesByContext = new WeakMap();
     var cachedRuntime = null;
     function cloneFunctionContext(context) {
         return __assign({}, context);
@@ -78,12 +84,49 @@ define(["require", "exports", "./execution-tracking"], function (require, export
     function getFunctionContextStack() {
         return functionContextStack.map(cloneFunctionContext);
     }
-    function withFunctionContext(context, work) {
+    function snapshotContextArguments(context) {
+        var argumentValues = argumentValuesByContext.get(context);
+        if (!argumentValues) {
+            return undefined;
+        }
+        try {
+            return (0, value_snapshot_1.snapshotFunctionArguments)(context.parameterNames || [], argumentValues);
+        }
+        catch (_error) {
+            return undefined;
+        }
+    }
+    /**
+     * The arguments of the innermost instrumented application function, snapshotted now. Wrapper-internal
+     * and infrastructure frames are skipped, the same way the log tag picks its function. Undefined when
+     * nothing is on the stack or that function opted out of argument capture.
+     */
+    function snapshotActiveFunctionArguments() {
+        for (var index = functionContextStack.length - 1; index >= 0; index -= 1) {
+            var context = functionContextStack[index];
+            if (!isWrapperAdapterContext(context) && !isInfrastructureContext(context)) {
+                return snapshotContextArguments(context);
+            }
+        }
+        return undefined;
+    }
+    /** The instrumented functions currently on the stack, outermost first, as `name -> name -> name`. */
+    function getFunctionCallChainLabel() {
+        return functionContextStack
+            .filter(function (context) { return !isWrapperAdapterContext(context) && !isInfrastructureContext(context); })
+            .map(function (context) { return context.functionName; })
+            .filter(Boolean)
+            .join(' -> ');
+    }
+    function withFunctionContext(context, work, argumentValues) {
         var trackedContext = cloneFunctionContext(context);
         var parentContext = getPreferredActiveFunctionContext();
         var startedAt = Date.now();
         var startUsage = readRemainingUsage();
         var didFinish = false;
+        if (argumentValues) {
+            argumentValuesByContext.set(trackedContext, argumentValues);
+        }
         var finish = function () {
             if (didFinish) {
                 return;
@@ -95,6 +138,15 @@ define(["require", "exports", "./execution-tracking"], function (require, export
             });
             removeFunctionContext(trackedContext);
         };
+        var fail = function (error) {
+            try {
+                (0, execution_tracking_1.recordFunctionError)(trackedContext, error, snapshotContextArguments(trackedContext));
+            }
+            catch (_recordError) {
+                // Recording the failure must never replace the failure.
+            }
+            finish();
+        };
         functionContextStack.push(trackedContext);
         try {
             var result = work();
@@ -103,7 +155,7 @@ define(["require", "exports", "./execution-tracking"], function (require, export
                     finish();
                     return value;
                 }, function (error) {
-                    finish();
+                    fail(error);
                     throw error;
                 });
             }
@@ -111,7 +163,7 @@ define(["require", "exports", "./execution-tracking"], function (require, export
             return result;
         }
         catch (error) {
-            finish();
+            fail(error);
             throw error;
         }
     }

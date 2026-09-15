@@ -7,6 +7,8 @@ const {
     isWrapperContext,
     loadNetSuiteWrapperConfig,
     prependUniqueModules,
+    resolveDefaultScopeKey,
+    resolveExporterSettings,
 } = require('../lib/build-support');
 
 const DEFAULT_INSTRUMENTATION_SOURCE = 'webpack-babel-auto';
@@ -72,6 +74,7 @@ function createNetSuiteWrapperInstrumentationRule(options = {}, config = {}) {
                 functionContextModule: FUNCTION_CONTEXT_MODULE_PATH,
                 trackedScriptEntryModule: TRACKED_SCRIPT_ENTRY_MODULE_PATH,
                 instrumentationSource: instrumentationOptions.instrumentationSource,
+                defaultScopeKey: resolveDefaultScopeKey(options),
             },
         }],
     };
@@ -167,6 +170,8 @@ function createNetSuiteWrapperWebpackPlugins(options = {}) {
             __NETSUITE_WRAPPER_AUTO_SINK_MODULE__: JSON.stringify(resolvedOptions.telemetryBootstrap.sinkModule),
             __NETSUITE_WRAPPER_AUTO_SINK_EXPORT__: JSON.stringify(resolvedOptions.telemetryBootstrap.sinkExport),
             __NETSUITE_WRAPPER_AUTO_SCOPE_KEY__: JSON.stringify(resolvedOptions.telemetryBootstrap.scopeKey),
+            __NETSUITE_WRAPPER_AUTO_RECORD_EXPORT__: JSON.stringify(resolveExporterSettings(resolvedOptions.telemetryBootstrap).recordExport),
+            __NETSUITE_WRAPPER_AUTO_HTTPS_EXPORT__: JSON.stringify(resolveExporterSettings(resolvedOptions.telemetryBootstrap).httpsExport),
         }));
     }
 

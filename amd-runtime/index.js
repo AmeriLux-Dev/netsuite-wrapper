@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
-define(["require", "exports", "./log", "./execution-tracking", "./https", "./function-context", "./performance-tracker", "./query", "./record", "./runtime", "./search", "./task", "./telemetry", "./url"], function (require, exports, log, execution_tracking_1, https, function_context_1, performance_tracker_1, query, record, runtime, search, task, telemetry_1, url) {
+define(["require", "exports", "./log", "./execution-tracking", "./https", "./function-context", "./https-exporter", "./netsuite-record-exporter", "./performance-tracker", "./query", "./record", "./runtime", "./search", "./task", "./telemetry", "./telemetry-exporter", "./url", "./value-snapshot"], function (require, exports, log, execution_tracking_1, https, function_context_1, https_exporter_1, netsuite_record_exporter_1, performance_tracker_1, query, record, runtime, search, task, telemetry_1, telemetry_exporter_1, url, value_snapshot_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.url = exports.task = exports.search = exports.runtime = exports.record = exports.query = exports.https = exports.log = void 0;
@@ -42,6 +42,8 @@ define(["require", "exports", "./log", "./execution-tracking", "./https", "./fun
     __exportStar(execution_tracking_1, exports);
     exports.https = __importStar(https);
     __exportStar(function_context_1, exports);
+    __exportStar(https_exporter_1, exports);
+    __exportStar(netsuite_record_exporter_1, exports);
     __exportStar(performance_tracker_1, exports);
     exports.query = __importStar(query);
     exports.record = __importStar(record);
@@ -49,5 +51,7 @@ define(["require", "exports", "./log", "./execution-tracking", "./https", "./fun
     exports.search = __importStar(search);
     exports.task = __importStar(task);
     __exportStar(telemetry_1, exports);
+    __exportStar(telemetry_exporter_1, exports);
     exports.url = __importStar(url);
+    __exportStar(value_snapshot_1, exports);
 });

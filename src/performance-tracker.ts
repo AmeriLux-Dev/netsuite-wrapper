@@ -7,10 +7,21 @@ import {
     type TrackedScriptEntryMetadata,
 } from './execution-tracking';
 import type { WrapperOperationMetadata, WrapperTelemetrySink } from './telemetry';
+import {
+    dispatchTelemetryBatch,
+    getTelemetryExporters,
+    registerTelemetryExporter,
+    takeTelemetryLogEntries,
+    type TelemetryExportBatch,
+    type TelemetryMode,
+    type TelemetrySpan,
+} from './telemetry-exporter';
+import { createNetSuiteRecordExporter } from './netsuite-record-exporter';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 
-type TelemetryMode = 'off' | 'boundary' | 'diagnostic';
+/** @deprecated Use TelemetrySpan from './telemetry-exporter'. */
+export type PersistedTrackerSpan = TelemetrySpan;
 
 type PerformanceTrackerSinkOptions = {
     defaultScopeKey?: string;
@@ -21,38 +32,6 @@ type CachedScopeState = {
     expiresAt: string;
 };
 
-type PersistedTrackerSpan = {
-    executionId: string;
-    flowId: string;
-    parentExecutionId?: string;
-    rootExecutionId: string;
-    spanRole: string;
-    entryKind: string;
-    entryKey: string;
-    scriptId: string;
-    scriptName: string;
-    scriptType: string;
-    deploymentId: string;
-    scopeKey: string;
-    stage: string;
-    operation: string;
-    transactionType: string;
-    transactionId?: number;
-    startedAt: string;
-    endedAt: string;
-    durationMs: number;
-    status: string;
-    context: string;
-    summary: string;
-    detail: string;
-    functionName: string;
-    functionModulePath: string;
-    callChain: string;
-    wrapperModule: string;
-    wrapperAction: string;
-};
-
-const EXECUTION_RECORD_TYPE = 'customrecord_ptrk_exec_span';
 const SCOPE_RECORD_TYPE = 'customrecord_ptrk_scope';
 const TELEMETRY_SCOPE_CACHE = 'ptrk_scope_modes';
 const DEFAULT_SCOPE_TTL_SECONDS = 1800;
@@ -100,7 +79,7 @@ type ActiveWrapperSpan = {
     flowId: string;
 };
 
-const deferredSpanQueues = new Map<string, PersistedTrackerSpan[]>();
+const deferredSpanQueues = new Map<string, TelemetrySpan[]>();
 
 function getNsCache(): typeof import('N/cache') {
     return require<typeof import('N/cache')>('N/cache');
@@ -112,10 +91,6 @@ function getNsFormat(): typeof import('N/format') {
 
 function getNsLog(): typeof import('N/log') {
     return require<typeof import('N/log')>('N/log');
-}
-
-function getNsRecord(): typeof import('N/record') {
-    return require<typeof import('N/record')>('N/record');
 }
 
 function getNsRuntime(): typeof import('N/runtime') {
@@ -209,7 +184,7 @@ function normalizeScopeMode(value: unknown): TelemetryMode {
         return value;
     }
 
-    return 'diagnostic';
+    return 'boundary';
 }
 
 function hasScopeExpired(expiresAt: string): boolean {
@@ -287,7 +262,7 @@ function loadScopeState(scopeKey: string): CachedScopeState {
         };
     } catch (_error) {
         return {
-            mode: 'diagnostic',
+            mode: 'boundary',
             expiresAt: '',
         };
     }
@@ -295,7 +270,7 @@ function loadScopeState(scopeKey: string): CachedScopeState {
 
 function resolveTelemetryMode(scopeKey: string): TelemetryMode {
     if (!scopeKey) {
-        return 'diagnostic';
+        return 'boundary';
     }
 
     try {
@@ -315,7 +290,7 @@ function resolveTelemetryMode(scopeKey: string): TelemetryMode {
         });
         return resolveModeFromScopeState(scopeState);
     } catch (_error) {
-        return 'diagnostic';
+        return 'boundary';
     }
 }
 
@@ -734,7 +709,7 @@ function inferTransactionId(detail: Record<string, unknown>): number | undefined
         || normalizeTransactionId(detail.fromId as string | number | null | undefined);
 }
 
-function buildPersistedSpan(metadata: WrapperOperationMetadata, span: ActiveWrapperSpan, activeExecution: ActiveTrackedExecutionSnapshot | null, parentExecutionId: string, scopeKey: string, status: string, startedAt: Date, endedAt: Date, detail: unknown, summaryOverride?: string): PersistedTrackerSpan {
+function buildPersistedSpan(metadata: WrapperOperationMetadata, span: ActiveWrapperSpan, activeExecution: ActiveTrackedExecutionSnapshot | null, parentExecutionId: string, scopeKey: string, status: string, startedAt: Date, endedAt: Date, detail: unknown, summaryOverride?: string): TelemetrySpan {
     const currentScriptMetadata = getCurrentScriptMetadata();
     const durationMs = Math.max(0, endedAt.getTime() - startedAt.getTime());
     const detailWithCaller = mergeCallerContext(detail);
@@ -792,10 +767,12 @@ function buildRootExecutionDetail(metadata: TrackedScriptEntryMetadata, executio
         modulePath: normalizeText(metadata.modulePath),
         observedFunctionCount: execution.observedFunctions.length,
         observedFunctions: execution.observedFunctions,
+        observedErrorCount: execution.observedErrors.length,
+        observedErrors: execution.observedErrors,
     };
 }
 
-function buildRootExecutionSpan(metadata: TrackedScriptEntryMetadata, execution: ActiveTrackedExecutionSnapshot, status: string, startedAt: Date, endedAt: Date, detail: unknown, summaryOverride?: string): PersistedTrackerSpan {
+function buildRootExecutionSpan(metadata: TrackedScriptEntryMetadata, execution: ActiveTrackedExecutionSnapshot, status: string, startedAt: Date, endedAt: Date, detail: unknown, summaryOverride?: string): TelemetrySpan {
     const currentScriptMetadata = getCurrentScriptMetadata();
     const durationMs = Math.max(0, endedAt.getTime() - startedAt.getTime());
     const executionContext = getExecutionContextLabel();
@@ -840,75 +817,33 @@ function buildRootExecutionSpan(metadata: TrackedScriptEntryMetadata, execution:
     };
 }
 
-function persistSpan(span: PersistedTrackerSpan): void {
-    try {
-        const spanRecord = getNsRecord().create({
-            type: EXECUTION_RECORD_TYPE,
-            isDynamic: false,
-        });
-
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.executionId, value: span.executionId });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.flowId, value: span.flowId });
-        if (span.parentExecutionId) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.parentExecutionId, value: span.parentExecutionId });
-        }
-        if (span.rootExecutionId) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.rootExecutionId, value: span.rootExecutionId });
-        }
-        if (span.spanRole) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.spanRole, value: span.spanRole });
-        }
-        if (span.entryKind) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.entryKind, value: span.entryKind });
-        }
-        if (span.entryKey) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.entryKey, value: span.entryKey });
-        }
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scriptId, value: span.scriptId });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scriptName, value: span.scriptName });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scriptType, value: span.scriptType });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.deploymentId, value: span.deploymentId });
-        if (span.scopeKey) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.scopeKey, value: span.scopeKey });
-        }
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.stage, value: span.stage });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.operation, value: span.operation });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.transactionType, value: span.transactionType });
-        if (span.transactionId !== undefined) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.transactionId, value: span.transactionId });
-        }
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.startedAt, value: span.startedAt });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.endedAt, value: span.endedAt });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.durationMs, value: span.durationMs });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.status, value: span.status });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.context, value: span.context });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.summary, value: span.summary });
-        spanRecord.setValue({ fieldId: EXECUTION_FIELDS.detail, value: span.detail });
-        if (span.functionName) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.functionName, value: span.functionName });
-        }
-        if (span.functionModulePath) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.functionModulePath, value: span.functionModulePath });
-        }
-        if (span.callChain) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.callChain, value: span.callChain });
-        }
-        if (span.wrapperModule) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.wrapperModule, value: span.wrapperModule });
-        }
-        if (span.wrapperAction) {
-            spanRecord.setValue({ fieldId: EXECUTION_FIELDS.wrapperAction, value: span.wrapperAction });
-        }
-        spanRecord.save({ enableSourcing: false, ignoreMandatoryFields: true });
-    } catch (error) {
-        getNsLog().error({ title: 'netsuite-wrapper PerformanceTracker telemetry save failed', details: String(error) });
+function ensureDefaultExporter(): void {
+    if (getTelemetryExporters().length === 0) {
+        registerTelemetryExporter(createNetSuiteRecordExporter());
     }
 }
 
-function enqueueDeferredSpan(rootExecutionId: string, span: PersistedTrackerSpan): void {
+function dispatchSpanBatch(spans: TelemetrySpan[], execution: ActiveTrackedExecutionSnapshot | null, mode: TelemetryMode): void {
+    if (spans.length === 0 && !execution) {
+        return;
+    }
+
+    ensureDefaultExporter();
+    const batch: TelemetryExportBatch = {
+        executionId: normalizeText(execution?.executionId),
+        flowId: normalizeText(execution?.flowId),
+        scopeKey: normalizeText(execution?.scopeKey) || normalizeText(spans[0]?.scopeKey),
+        mode: mode === 'diagnostic' ? 'diagnostic' : 'boundary',
+        spans,
+        logs: execution ? takeTelemetryLogEntries(execution.executionId) : [],
+    };
+    dispatchTelemetryBatch(batch);
+}
+
+function enqueueDeferredSpan(rootExecutionId: string, span: TelemetrySpan): void {
     const executionKey = normalizeText(rootExecutionId);
     if (!executionKey) {
-        persistSpan(span);
+        dispatchSpanBatch([span], null, 'diagnostic');
         return;
     }
 
@@ -921,20 +856,15 @@ function enqueueDeferredSpan(rootExecutionId: string, span: PersistedTrackerSpan
     deferredSpanQueues.set(executionKey, [span]);
 }
 
-function flushDeferredSpans(rootExecutionId: string): void {
+function takeDeferredSpans(rootExecutionId: string): TelemetrySpan[] {
     const executionKey = normalizeText(rootExecutionId);
     if (!executionKey) {
-        return;
+        return [];
     }
 
-    const queuedSpans = deferredSpanQueues.get(executionKey);
-    if (!queuedSpans || queuedSpans.length === 0) {
-        deferredSpanQueues.delete(executionKey);
-        return;
-    }
-
+    const queuedSpans = deferredSpanQueues.get(executionKey) || [];
     deferredSpanQueues.delete(executionKey);
-    queuedSpans.forEach((span) => persistSpan(span));
+    return queuedSpans;
 }
 
 function normalizeSinkOptions(optionsOrScopeKey?: string | PerformanceTrackerSinkOptions): PerformanceTrackerSinkOptions {
@@ -957,8 +887,8 @@ export function runTrackedScriptEntry<T>(metadata: TrackedScriptEntryMetadata, w
 
     const finish = (status: string, detail: unknown, summaryOverride?: string): void => {
         const completedExecution = finishTrackedScriptExecution(execution.executionId) || execution;
-        flushDeferredSpans(completedExecution.executionId);
-        persistSpan(buildRootExecutionSpan(
+        const spans = takeDeferredSpans(completedExecution.executionId);
+        spans.push(buildRootExecutionSpan(
             metadata,
             completedExecution,
             status,
@@ -967,6 +897,7 @@ export function runTrackedScriptEntry<T>(metadata: TrackedScriptEntryMetadata, w
             detail,
             summaryOverride,
         ));
+        dispatchSpanBatch(spans, completedExecution, telemetryMode);
     };
 
     try {
@@ -1003,10 +934,28 @@ export function runTrackedScriptEntry<T>(metadata: TrackedScriptEntryMetadata, w
     }
 }
 
+/**
+ * Makes a function returned by a call (`export const post = defineRestlet(...)`) a tracked entry:
+ * every invocation runs inside runTrackedScriptEntry. Anything that is not a function is returned
+ * as is, so the build can apply it to any exported const initialised by a call.
+ */
+export function wrapTrackedScriptEntryFunction<T>(metadata: TrackedScriptEntryMetadata, target: T): T {
+    if (typeof target !== 'function') {
+        return target;
+    }
+
+    const entryFunction = target as unknown as (...args: unknown[]) => unknown;
+    const wrapped = function trackedScriptEntry(this: unknown, ...args: unknown[]): unknown {
+        return runTrackedScriptEntry(metadata, () => entryFunction.apply(this, args));
+    };
+    return wrapped as unknown as T;
+}
+
 export function createPerformanceTrackerSink(optionsOrScopeKey?: string | PerformanceTrackerSinkOptions): WrapperTelemetrySink {
     const options = normalizeSinkOptions(optionsOrScopeKey);
     const defaultScopeKey = normalizeText(options.defaultScopeKey);
     const activeSpans: ActiveWrapperSpan[] = [];
+    ensureDefaultExporter();
 
     return {
         isActive(): boolean {

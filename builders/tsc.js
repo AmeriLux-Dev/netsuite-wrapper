@@ -3,6 +3,8 @@ const path = require('path');
 const {
     DEFAULT_PACKAGE_NAME,
     loadNetSuiteWrapperConfig,
+    resolveDefaultScopeKey,
+    resolveExporterSettings,
 } = require('../lib/build-support');
 const { transformNetSuiteWrapperSource } = require('../lib/instrumentation-core');
 const { listOverrideSpecifiers } = require('../lib/override-modules');
@@ -168,9 +170,28 @@ function mapSourceModuleToOutputFile(modulePath, outDir, rootDir) {
     return fs.existsSync(outputFile) ? outputFile : '';
 }
 
-function createAmdBootstrapSource(sinkModuleId, sinkExportName, scopeKey) {
+function createAmdBootstrapSource(sinkModuleId, sinkExportName, scopeKey, exporterSettings = {}) {
+    // The exporter modules sit next to this file in the copied wrapper runtime.
+    const dependencies = ['./telemetry', sinkModuleId];
+    const factoryParameters = ['telemetryModule', 'sinkModule'];
+    const registrationLines = [];
+    if (exporterSettings.recordExport !== false || exporterSettings.httpsExport) {
+        dependencies.push('./telemetry-exporter');
+        factoryParameters.push('telemetryExporterModule');
+    }
+    if (exporterSettings.recordExport !== false) {
+        dependencies.push('./netsuite-record-exporter');
+        factoryParameters.push('recordExporterModule');
+        registrationLines.push('        telemetryExporterModule.registerTelemetryExporter(recordExporterModule.createNetSuiteRecordExporter());');
+    }
+    if (exporterSettings.httpsExport) {
+        dependencies.push('./https-exporter');
+        factoryParameters.push('httpsExporterModule');
+        registrationLines.push(`        telemetryExporterModule.registerTelemetryExporter(httpsExporterModule.createHttpsExporter(${JSON.stringify(exporterSettings.httpsExport)}));`);
+    }
+
     return [
-        `define([${JSON.stringify('./telemetry')}, ${JSON.stringify(sinkModuleId)}], function (telemetryModule, sinkModule) {`,
+        `define([${dependencies.map((dependency) => JSON.stringify(dependency)).join(', ')}], function (${factoryParameters.join(', ')}) {`,
         `    var sinkModuleName = ${JSON.stringify(sinkModuleId)};`,
         `    var sinkExport = ${JSON.stringify(sinkExportName)};`,
         `    var sinkOptions = ${JSON.stringify(scopeKey || '')} || undefined;`,
@@ -179,6 +200,7 @@ function createAmdBootstrapSource(sinkModuleId, sinkExportName, scopeKey) {
         '        if (activeSink) {',
         '            return activeSink;',
         '        }',
+        ...registrationLines,
         '        var createSink = sinkExport === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExport];',
         '        if (typeof createSink !== "function") {',
         '            throw new Error("netsuite-wrapper bootstrap could not find sink export " + sinkExport + " in " + sinkModuleName);',
@@ -246,6 +268,7 @@ function resolveBootstrapFiles(resolvedOptions, outDir, wrapperOutputDir, rootDi
             sinkModuleId,
             resolvedOptions.telemetryBootstrap.sinkExport,
             resolvedOptions.telemetryBootstrap.scopeKey,
+            resolveExporterSettings(resolvedOptions.telemetryBootstrap) || {},
         ), 'utf8');
         bootstrapFiles.push(bootstrapFile);
     }
@@ -297,6 +320,7 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
     const wrapperOutputDir = path.join(outDir, wrapperSubdir);
     const rootDir = options.rootDir ? path.resolve(process.cwd(), options.rootDir) : undefined;
     const resolvedOptions = loadNetSuiteWrapperConfig(options);
+    const defaultScopeKey = resolveDefaultScopeKey(options);
 
     if (!fs.existsSync(outDir)) {
         throw new Error(`Output directory does not exist: ${outDir}`);
@@ -359,10 +383,13 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
         const resolvedRootDir = path.resolve(rootDir);
         const emittedOutputFiles = [];
 
+        // A root is a script whose header names a scope key, or, when the config supplies a default
+        // scope key, any script the header marks with @NScriptType.
         const hasScopeKeyMarker = (sourceCode) => {
             const leadingCommentMatch = sourceCode.match(/^\s*((?:\/\*[\s\S]*?\*\/\s*|\/\/[^\r\n]*\r?\n\s*)+)/);
             const leadingComment = leadingCommentMatch ? leadingCommentMatch[1] : '';
-            return /@pftr:scopeKey\s+\S/.test(leadingComment);
+            return /@pftr:scopeKey\s+\S/.test(leadingComment)
+                || Boolean(defaultScopeKey && /@NScriptType\s+\S/.test(leadingComment));
         };
 
         for (const sourceFile of getAllFiles(resolvedRootDir)) {
@@ -454,6 +481,7 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
                 trackedScriptEntryModule: toModuleId(outputFile, trackedScriptEntryModuleFile),
                 instrumentationSource: instrumentationOptions.instrumentationSource,
                 moduleFormat: 'amd',
+                defaultScopeKey,
             })
             : null;
         const transformedSourceText = instrumentedResult ? instrumentedResult.code : sourceText;
