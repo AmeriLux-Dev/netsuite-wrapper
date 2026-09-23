@@ -22,6 +22,8 @@ defineLazyExport(moduleExports, 'CacheDuration', () => getNsHttps().CacheDuratio
 defineLazyExport(moduleExports, 'Encoding', () => getNsHttps().Encoding);
 defineLazyExport(moduleExports, 'RedirectType', () => getNsHttps().RedirectType);
 defineLazyExport(moduleExports, 'createSecureString', () => getNsHttps().createSecureString);
+export const createSecretKey = undefined as unknown as typeof NsHttps.createSecretKey;
+defineLazyExport(moduleExports, 'createSecretKey', () => getNsHttps().createSecretKey);
 
 function normalizeText(value: unknown): string {
     if (value === null || value === undefined) {

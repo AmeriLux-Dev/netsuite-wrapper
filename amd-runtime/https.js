@@ -1,7 +1,7 @@
 define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, lazy_module_1, function_wrapper_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.delete = exports.requestSuiteTalkRest = exports.requestSuitelet = exports.requestRestlet = exports.request = exports.put = exports.post = exports.get = exports.createSecureString = exports.RedirectType = exports.Encoding = exports.CacheDuration = exports.Method = void 0;
+    exports.delete = exports.requestSuiteTalkRest = exports.requestSuitelet = exports.requestRestlet = exports.request = exports.put = exports.post = exports.get = exports.createSecretKey = exports.createSecureString = exports.RedirectType = exports.Encoding = exports.CacheDuration = exports.Method = void 0;
     var moduleExports = exports;
     function getNsHttps() {
         return require('N/https');
@@ -16,6 +16,8 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'Encoding', function () { return getNsHttps().Encoding; });
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'RedirectType', function () { return getNsHttps().RedirectType; });
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'createSecureString', function () { return getNsHttps().createSecureString; });
+    exports.createSecretKey = undefined;
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createSecretKey', function () { return getNsHttps().createSecretKey; });
     function normalizeText(value) {
         if (value === null || value === undefined) {
             return '';

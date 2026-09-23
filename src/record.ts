@@ -41,6 +41,11 @@ function getOptionValue(options: unknown, key: string): unknown {
 export const Type = undefined as unknown as typeof NsRecord.Type;
 defineLazyExport(moduleExports, 'Type', () => getNsRecord().Type);
 
+export const attach = undefined as unknown as typeof NsRecord.attach;
+export const detach = undefined as unknown as typeof NsRecord.detach;
+defineLazyExport(moduleExports, 'attach', () => getNsRecord().attach);
+defineLazyExport(moduleExports, 'detach', () => getNsRecord().detach);
+
 function buildLoadMetadata(options: Parameters<typeof NsRecord.load>[0]) {
     return {
         module: 'record',

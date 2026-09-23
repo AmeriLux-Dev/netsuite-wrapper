@@ -1,7 +1,7 @@
 define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, lazy_module_1, function_wrapper_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.delete = exports.deleteRecord = exports.submitFields = exports.transform = exports.copy = exports.create = exports.load = exports.Type = void 0;
+    exports.delete = exports.deleteRecord = exports.submitFields = exports.transform = exports.copy = exports.create = exports.load = exports.detach = exports.attach = exports.Type = void 0;
     var moduleExports = exports;
     function getNsRecord() {
         return require('N/record');
@@ -20,6 +20,10 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     }
     exports.Type = undefined;
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'Type', function () { return getNsRecord().Type; });
+    exports.attach = undefined;
+    exports.detach = undefined;
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'attach', function () { return getNsRecord().attach; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'detach', function () { return getNsRecord().detach; });
     function buildLoadMetadata(options) {
         return {
             module: 'record',

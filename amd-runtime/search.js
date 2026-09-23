@@ -12,7 +12,7 @@ var __assign = (this && this.__assign) || function () {
 define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, lazy_module_1, function_wrapper_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.lookupFields = exports.load = exports.create = exports.Summary = exports.Sort = exports.Operator = exports.Type = void 0;
+    exports.lookupFields = exports.load = exports.create = exports.delete = exports.global = exports.duplicates = exports.createSetting = exports.createFilter = exports.createColumn = exports.IncludePeriodTransactionEnum = exports.ConsolidationEnum = exports.SettingName = exports.Summary = exports.Sort = exports.Operator = exports.Type = void 0;
     var moduleExports = exports;
     function getNsSearch() {
         return require('N/search');
@@ -37,6 +37,25 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'Operator', function () { return getNsSearch().Operator; });
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'Sort', function () { return getNsSearch().Sort; });
     (0, lazy_module_1.defineLazyExport)(moduleExports, 'Summary', function () { return getNsSearch().Summary; });
+    exports.SettingName = undefined;
+    exports.ConsolidationEnum = undefined;
+    exports.IncludePeriodTransactionEnum = undefined;
+    exports.createColumn = undefined;
+    exports.createFilter = undefined;
+    exports.createSetting = undefined;
+    exports.duplicates = undefined;
+    exports.global = undefined;
+    var deleteSearch = undefined;
+    exports.delete = deleteSearch;
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'SettingName', function () { return getNsSearch().SettingName; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'ConsolidationEnum', function () { return getNsSearch().ConsolidationEnum; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'IncludePeriodTransactionEnum', function () { return getNsSearch().IncludePeriodTransactionEnum; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createColumn', function () { return getNsSearch().createColumn; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createFilter', function () { return getNsSearch().createFilter; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createSetting', function () { return getNsSearch().createSetting; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'duplicates', function () { return getNsSearch().duplicates; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'global', function () { return getNsSearch().global; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'delete', function () { return getNsSearch().delete; });
     function normalizeColumns(value) {
         if (!Array.isArray(value)) {
             return '';

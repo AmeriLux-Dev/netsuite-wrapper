@@ -1,12 +1,44 @@
 import type * as NsQuery from 'N/query';
 import { runWrappedOperation } from './telemetry';
+import { defineLazyExport } from './lazy-module';
 import { wrapFunction } from './function-wrapper';
 
 declare const require: <T = unknown>(moduleName: string) => T;
+declare const exports: Record<string, unknown>;
+
+const moduleExports = exports;
 
 function getNsQuery(): typeof import('N/query') {
     return require<typeof import('N/query')>('N/query');
 }
+
+export const Operator = undefined as unknown as typeof NsQuery.Operator;
+export const Type = undefined as unknown as typeof NsQuery.Type;
+export const Aggregate = undefined as unknown as typeof NsQuery.Aggregate;
+export const ReturnType = undefined as unknown as typeof NsQuery.ReturnType;
+export const FieldContext = undefined as unknown as typeof NsQuery.FieldContext;
+export const SortLocale = undefined as unknown as typeof NsQuery.SortLocale;
+export const RelativeDateRange = undefined as unknown as typeof NsQuery.RelativeDateRange;
+// The types declare DateId a const enum, which has no value to take `typeof` of; N/query still exports it at runtime.
+export const DateId = undefined as unknown as Readonly<Record<string, NsQuery.DateId>>;
+export const runSuiteQLPaged = undefined as unknown as typeof NsQuery.runSuiteQLPaged;
+export const createPeriod = undefined as unknown as typeof NsQuery.createPeriod;
+export const createRelativeDate = undefined as unknown as typeof NsQuery.createRelativeDate;
+defineLazyExport(moduleExports, 'Operator', () => getNsQuery().Operator);
+defineLazyExport(moduleExports, 'Type', () => getNsQuery().Type);
+defineLazyExport(moduleExports, 'Aggregate', () => getNsQuery().Aggregate);
+defineLazyExport(moduleExports, 'ReturnType', () => getNsQuery().ReturnType);
+defineLazyExport(moduleExports, 'FieldContext', () => getNsQuery().FieldContext);
+defineLazyExport(moduleExports, 'SortLocale', () => getNsQuery().SortLocale);
+defineLazyExport(moduleExports, 'RelativeDateRange', () => getNsQuery().RelativeDateRange);
+defineLazyExport(moduleExports, 'DateId', () => (getNsQuery() as unknown as { DateId: unknown }).DateId);
+defineLazyExport(moduleExports, 'runSuiteQLPaged', () => getNsQuery().runSuiteQLPaged);
+defineLazyExport(moduleExports, 'createPeriod', () => getNsQuery().createPeriod);
+defineLazyExport(moduleExports, 'createRelativeDate', () => getNsQuery().createRelativeDate);
+// The types declare delete as an interface alone, with no value behind it; N/query still exports it at runtime.
+const deleteQuery = undefined as unknown as NsQuery.delete;
+export { deleteQuery as delete };
+defineLazyExport(moduleExports, 'delete', () => (getNsQuery() as unknown as { delete: unknown }).delete);
 
 type QueryInstance = {
     id?: number | string;
