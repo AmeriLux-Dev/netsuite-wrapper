@@ -9,7 +9,7 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
-define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, lazy_module_1, function_wrapper_1) {
+define(["require", "exports", "./telemetry", "./fail-open", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, fail_open_1, lazy_module_1, function_wrapper_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.lookupFields = exports.load = exports.create = exports.delete = exports.global = exports.duplicates = exports.createSetting = exports.createFilter = exports.createColumn = exports.IncludePeriodTransactionEnum = exports.ConsolidationEnum = exports.SettingName = exports.Summary = exports.Sort = exports.Operator = exports.Type = void 0;
@@ -33,10 +33,6 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     exports.Operator = undefined;
     exports.Sort = undefined;
     exports.Summary = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Type', function () { return getNsSearch().Type; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Operator', function () { return getNsSearch().Operator; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Sort', function () { return getNsSearch().Sort; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Summary', function () { return getNsSearch().Summary; });
     exports.SettingName = undefined;
     exports.ConsolidationEnum = undefined;
     exports.IncludePeriodTransactionEnum = undefined;
@@ -47,15 +43,6 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     exports.global = undefined;
     var deleteSearch = undefined;
     exports.delete = deleteSearch;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'SettingName', function () { return getNsSearch().SettingName; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'ConsolidationEnum', function () { return getNsSearch().ConsolidationEnum; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'IncludePeriodTransactionEnum', function () { return getNsSearch().IncludePeriodTransactionEnum; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createColumn', function () { return getNsSearch().createColumn; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createFilter', function () { return getNsSearch().createFilter; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createSetting', function () { return getNsSearch().createSetting; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'duplicates', function () { return getNsSearch().duplicates; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'global', function () { return getNsSearch().global; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'delete', function () { return getNsSearch().delete; });
     function normalizeColumns(value) {
         if (!Array.isArray(value)) {
             return '';
@@ -112,6 +99,9 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
         };
     }
     function instrumentSearchResultSet(resultSet, searchInstance) {
+        return (0, fail_open_1.instrumentReturnedObject)(resultSet, function (target) { return replaceResultSetGetRange(target, searchInstance); });
+    }
+    function replaceResultSetGetRange(resultSet, searchInstance) {
         if (typeof resultSet.getRange === 'function') {
             var originalGetRange_1 = resultSet.getRange.bind(resultSet);
             var wrappedGetRange = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('getRange', searchInstance, {
@@ -128,6 +118,9 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
         return resultSet;
     }
     function instrumentSearchPagedData(pagedData, searchInstance) {
+        return (0, fail_open_1.instrumentReturnedObject)(pagedData, function (target) { return replaceSearchPageFetch(target, searchInstance); });
+    }
+    function replaceSearchPageFetch(pagedData, searchInstance) {
         if (typeof pagedData.fetch === 'function') {
             var originalFetch_1 = pagedData.fetch.bind(pagedData);
             var wrappedFetch = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('fetchPage', searchInstance, {
@@ -142,6 +135,9 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
         return pagedData;
     }
     function instrumentSearchInstance(searchInstance) {
+        return (0, fail_open_1.instrumentReturnedObject)(searchInstance, replaceSearchRunMethods);
+    }
+    function replaceSearchRunMethods(searchInstance) {
         if (typeof searchInstance.run === 'function') {
             var originalRun_1 = searchInstance.run.bind(searchInstance);
             searchInstance.run = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildSearchExecutionMetadata('run', searchInstance); }, function () { return instrumentSearchResultSet(originalRun_1(), searchInstance); }); });
@@ -162,4 +158,6 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     exports.create = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildCreateMetadata(options); }, function () { return instrumentSearchInstance(getNsSearch().create(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildCreateMetadata(options); }, function () { return getNsSearch().create.promise(options).then(function (searchInstance) { return instrumentSearchInstance(searchInstance); }); }); });
     exports.load = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return instrumentSearchInstance(getNsSearch().load(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return getNsSearch().load.promise(options).then(function (searchInstance) { return instrumentSearchInstance(searchInstance); }); }); });
     exports.lookupFields = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLookupFieldsMetadata(options); }, function () { return getNsSearch().lookupFields(options); }); }, (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLookupFieldsMetadata(options); }, function () { return getNsSearch().lookupFields.promise(options); }); }));
+    // Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+    (0, lazy_module_1.forwardModuleExports)(moduleExports, getNsSearch);
 });

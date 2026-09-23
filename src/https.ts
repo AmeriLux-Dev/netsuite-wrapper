@@ -1,6 +1,6 @@
 import type * as NsHttps from 'N/https';
 import { runWrappedOperation } from './telemetry';
-import { defineLazyExport } from './lazy-module';
+import { forwardModuleExports } from './lazy-module';
 import { wrapFunction } from './function-wrapper';
 
 declare const require: <T = unknown>(moduleName: string) => T;
@@ -17,13 +17,7 @@ export const CacheDuration = undefined as unknown as typeof NsHttps.CacheDuratio
 export const Encoding = undefined as unknown as typeof NsHttps.Encoding;
 export const RedirectType = undefined as unknown as typeof NsHttps.RedirectType;
 export const createSecureString = undefined as unknown as typeof NsHttps.createSecureString;
-defineLazyExport(moduleExports, 'Method', () => getNsHttps().Method);
-defineLazyExport(moduleExports, 'CacheDuration', () => getNsHttps().CacheDuration);
-defineLazyExport(moduleExports, 'Encoding', () => getNsHttps().Encoding);
-defineLazyExport(moduleExports, 'RedirectType', () => getNsHttps().RedirectType);
-defineLazyExport(moduleExports, 'createSecureString', () => getNsHttps().createSecureString);
 export const createSecretKey = undefined as unknown as typeof NsHttps.createSecretKey;
-defineLazyExport(moduleExports, 'createSecretKey', () => getNsHttps().createSecretKey);
 
 function normalizeText(value: unknown): string {
     if (value === null || value === undefined) {
@@ -187,3 +181,6 @@ export const requestSuitelet: typeof NsHttps.requestSuitelet = wrapFunction<type
 export const requestSuiteTalkRest = ((options: Parameters<typeof NsHttps.requestSuiteTalkRest>[0]) => runWrappedOperation(() => buildRequestMetadata('requestSuiteTalkRest', 'HTTPS SuiteTalk REST request', options), () => getNsHttps().requestSuiteTalkRest(options))) as typeof NsHttps.requestSuiteTalkRest;
 
 export { deleteRequestBase as delete };
+
+// Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+forwardModuleExports(moduleExports, getNsHttps);

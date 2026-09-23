@@ -1,6 +1,6 @@
 import type * as NsUrl from 'N/url';
 import { runWrappedOperation } from './telemetry';
-import { defineLazyExport } from './lazy-module';
+import { forwardModuleExports } from './lazy-module';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 declare const exports: Record<string, unknown>;
@@ -12,7 +12,6 @@ function getNsUrl(): typeof import('N/url') {
 }
 
 export const HostType = undefined as unknown as typeof NsUrl.HostType;
-defineLazyExport(moduleExports, 'HostType', () => getNsUrl().HostType);
 
 function normalizeText(value: unknown): string {
     if (value === null || value === undefined) {
@@ -110,3 +109,6 @@ export const resolveRecord = ((options: Parameters<typeof NsUrl.resolveRecord>[0
 export const resolveScript = ((options: Parameters<typeof NsUrl.resolveScript>[0]) => runWrappedOperation(() => buildUrlMetadata('resolveScript', 'Resolve NetSuite script URL', options), () => getNsUrl().resolveScript(options))) as typeof NsUrl.resolveScript;
 
 export const resolveTaskLink = ((options: Parameters<typeof NsUrl.resolveTaskLink>[0]) => runWrappedOperation(() => buildUrlMetadata('resolveTaskLink', 'Resolve NetSuite task link URL', options), () => getNsUrl().resolveTaskLink(options))) as typeof NsUrl.resolveTaskLink;
+
+// Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+forwardModuleExports(moduleExports, getNsUrl);

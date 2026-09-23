@@ -1,6 +1,7 @@
 import type * as NsTask from 'N/task';
 import { runWrappedOperation } from './telemetry';
-import { defineLazyExport } from './lazy-module';
+import { instrumentReturnedObject } from './fail-open';
+import { forwardModuleExports } from './lazy-module';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 declare const exports: Record<string, unknown>;
@@ -18,13 +19,6 @@ export const DedupeMode = undefined as unknown as typeof NsTask.DedupeMode;
 export const DedupeEntityType = undefined as unknown as typeof NsTask.DedupeEntityType;
 export const ActionCondition = undefined as unknown as typeof NsTask.ActionCondition;
 export const MapReduceStage = undefined as unknown as typeof NsTask.MapReduceStage;
-defineLazyExport(moduleExports, 'TaskType', () => getNsTask().TaskType);
-defineLazyExport(moduleExports, 'TaskStatus', () => getNsTask().TaskStatus);
-defineLazyExport(moduleExports, 'MasterSelectionMode', () => getNsTask().MasterSelectionMode);
-defineLazyExport(moduleExports, 'DedupeMode', () => getNsTask().DedupeMode);
-defineLazyExport(moduleExports, 'DedupeEntityType', () => getNsTask().DedupeEntityType);
-defineLazyExport(moduleExports, 'ActionCondition', () => getNsTask().ActionCondition);
-defineLazyExport(moduleExports, 'MapReduceStage', () => getNsTask().MapReduceStage);
 
 type TaskInstance = {
     submit?: () => string;
@@ -108,6 +102,10 @@ function createTaskSubmitMetadata(options: unknown) {
 }
 
 function instrumentTaskInstance<T extends TaskInstance>(taskInstance: T, createOptions: unknown): T {
+    return instrumentReturnedObject(taskInstance, (target) => replaceTaskMethods(target, createOptions));
+}
+
+function replaceTaskMethods<T extends TaskInstance>(taskInstance: T, createOptions: unknown): T {
     if (typeof taskInstance.submit === 'function') {
         const originalSubmit = taskInstance.submit.bind(taskInstance);
         taskInstance.submit = () => runWrappedOperation(() => createTaskSubmitMetadata(createOptions), () => originalSubmit());
@@ -130,3 +128,6 @@ function instrumentTaskInstance<T extends TaskInstance>(taskInstance: T, createO
 export const create = ((options: Parameters<typeof NsTask.create>[0]) => runWrappedOperation(() => buildTaskMetadata('create', `Create ${normalizeText(getOptionValue(options, 'taskType')) || 'NetSuite'} task`, options), () => instrumentTaskInstance(getNsTask().create(options), options))) as typeof NsTask.create;
 
 export const checkStatus = ((options: Parameters<typeof NsTask.checkStatus>[0]) => runWrappedOperation(() => buildTaskMetadata('checkStatus', 'Check NetSuite task status', options), () => getNsTask().checkStatus(options))) as typeof NsTask.checkStatus;
+
+// Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+forwardModuleExports(moduleExports, getNsTask);

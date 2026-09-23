@@ -1,6 +1,6 @@
 import type * as NsRuntime from 'N/runtime';
 import { runWrappedOperation } from './telemetry';
-import { defineLazyExport } from './lazy-module';
+import { forwardModuleExports } from './lazy-module';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 declare const exports: Record<string, unknown>;
@@ -35,19 +35,9 @@ export const envType = undefined as unknown as typeof NsRuntime.envType;
 export const ContextType = undefined as unknown as typeof NsRuntime.ContextType;
 export const EnvType = undefined as unknown as typeof NsRuntime.EnvType;
 export const Permission = undefined as unknown as typeof NsRuntime.Permission;
-defineLazyExport(moduleExports, 'accountId', () => getNsRuntime().accountId);
-defineLazyExport(moduleExports, 'version', () => getNsRuntime().version);
-defineLazyExport(moduleExports, 'executionContext', () => getNsRuntime().executionContext);
-defineLazyExport(moduleExports, 'envType', () => getNsRuntime().envType);
-defineLazyExport(moduleExports, 'ContextType', () => getNsRuntime().ContextType);
-defineLazyExport(moduleExports, 'EnvType', () => getNsRuntime().EnvType);
-defineLazyExport(moduleExports, 'Permission', () => getNsRuntime().Permission);
 export const country = undefined as unknown as typeof NsRuntime.country;
 export const processorCount = undefined as unknown as typeof NsRuntime.processorCount;
 export const queueCount = undefined as unknown as typeof NsRuntime.queueCount;
-defineLazyExport(moduleExports, 'country', () => getNsRuntime().country);
-defineLazyExport(moduleExports, 'processorCount', () => getNsRuntime().processorCount);
-defineLazyExport(moduleExports, 'queueCount', () => getNsRuntime().queueCount);
 
 export const getCurrentScript = (() => runWrappedOperation(() => buildRuntimeMetadata('getCurrentScript', 'Get current script runtime context'), () => getNsRuntime().getCurrentScript())) as typeof NsRuntime.getCurrentScript;
 
@@ -58,3 +48,6 @@ export const getCurrentUser = (() => runWrappedOperation(() => buildRuntimeMetad
 export const isFeatureInEffect = ((options: Parameters<typeof NsRuntime.isFeatureInEffect>[0]) => runWrappedOperation(() => buildRuntimeMetadata('isFeatureInEffect', 'Check NetSuite feature flag', {
     feature: normalizeText((options as { feature?: unknown }).feature),
 }), () => getNsRuntime().isFeatureInEffect(options))) as typeof NsRuntime.isFeatureInEffect;
+
+// Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+forwardModuleExports(moduleExports, getNsRuntime);

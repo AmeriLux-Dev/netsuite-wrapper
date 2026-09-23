@@ -9,6 +9,7 @@ const {
     prependUniqueModules,
     resolveDefaultScopeKey,
     resolveExporterSettings,
+    resolveOverrideModules,
 } = require('../lib/build-support');
 
 const DEFAULT_INSTRUMENTATION_SOURCE = 'webpack-babel-auto';
@@ -149,7 +150,7 @@ function createNetSuiteWrapperWebpackPlugins(options = {}) {
     const resolvedOptions = loadNetSuiteWrapperConfig(options);
     const packageName = resolvedOptions.packageName || DEFAULT_PACKAGE_NAME;
     const runtimeDir = resolvedOptions.runtimeDir ? path.resolve(resolvedOptions.runtimeDir) : undefined;
-    const overrideModules = resolvedOptions.modules || DEFAULT_OVERRIDE_MODULES;
+    const overrideModules = resolveOverrideModules(resolvedOptions);
     const plugins = overrideModules.map((moduleName) => {
         const matcher = new RegExp(`^N/${moduleName}$`);
 
@@ -182,7 +183,7 @@ function createNetSuiteWrapperWebpackExternals(options = {}) {
     const resolvedOptions = loadNetSuiteWrapperConfig(options);
     const packageName = resolvedOptions.packageName || DEFAULT_PACKAGE_NAME;
     const runtimeDir = resolvedOptions.runtimeDir ? path.resolve(resolvedOptions.runtimeDir) : undefined;
-    const overrideModules = resolvedOptions.modules || DEFAULT_OVERRIDE_MODULES;
+    const overrideModules = resolveOverrideModules(resolvedOptions);
     const overrideRequests = createOverrideRequestSet(overrideModules);
 
     return function netsuiteWrapperExternals({ context, request }, callback) {

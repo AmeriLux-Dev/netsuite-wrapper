@@ -1,3 +1,5 @@
+import { observe } from './fail-open';
+
 export interface WrapperOperationMetadata {
     module: string;
     action: string;
@@ -42,9 +44,18 @@ function resolveWrapperOperationMetadata(metadata: WrapperOperationMetadataInput
 }
 
 export function runWrappedOperation<T>(metadata: WrapperOperationMetadataInput, work: () => T): T {
-    if (!activeSink || (typeof activeSink.isActive === 'function' && !activeSink.isActive())) {
+    const sink = activeSink;
+    if (!sink) {
         return work();
     }
 
-    return activeSink.runOperation(resolveWrapperOperationMetadata(metadata), work);
+    // Everything the sink does, including deciding whether it is active and building the metadata,
+    // runs inside observe(): a sink that fails never stops the N/* call or changes what it returns.
+    return observe(work, (observedWork) => {
+        if (typeof sink.isActive === 'function' && !sink.isActive()) {
+            return observedWork();
+        }
+
+        return sink.runOperation(resolveWrapperOperationMetadata(metadata), observedWork);
+    });
 }

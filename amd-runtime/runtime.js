@@ -27,23 +27,15 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
     exports.ContextType = undefined;
     exports.EnvType = undefined;
     exports.Permission = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'accountId', function () { return getNsRuntime().accountId; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'version', function () { return getNsRuntime().version; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'executionContext', function () { return getNsRuntime().executionContext; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'envType', function () { return getNsRuntime().envType; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'ContextType', function () { return getNsRuntime().ContextType; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'EnvType', function () { return getNsRuntime().EnvType; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Permission', function () { return getNsRuntime().Permission; });
     exports.country = undefined;
     exports.processorCount = undefined;
     exports.queueCount = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'country', function () { return getNsRuntime().country; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'processorCount', function () { return getNsRuntime().processorCount; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'queueCount', function () { return getNsRuntime().queueCount; });
     exports.getCurrentScript = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('getCurrentScript', 'Get current script runtime context'); }, function () { return getNsRuntime().getCurrentScript(); }); });
     exports.getCurrentSession = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('getCurrentSession', 'Get current runtime session'); }, function () { return getNsRuntime().getCurrentSession(); }); });
     exports.getCurrentUser = (function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('getCurrentUser', 'Get current runtime user'); }, function () { return getNsRuntime().getCurrentUser(); }); });
     exports.isFeatureInEffect = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRuntimeMetadata('isFeatureInEffect', 'Check NetSuite feature flag', {
         feature: normalizeText(options.feature),
     }); }, function () { return getNsRuntime().isFeatureInEffect(options); }); });
+    // Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+    (0, lazy_module_1.forwardModuleExports)(moduleExports, getNsRuntime);
 });

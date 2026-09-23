@@ -1,4 +1,4 @@
-define(["require", "exports", "./telemetry", "./lazy-module"], function (require, exports, telemetry_1, lazy_module_1) {
+define(["require", "exports", "./telemetry", "./fail-open", "./lazy-module"], function (require, exports, telemetry_1, fail_open_1, lazy_module_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.checkStatus = exports.create = exports.MapReduceStage = exports.ActionCondition = exports.DedupeEntityType = exports.DedupeMode = exports.MasterSelectionMode = exports.TaskStatus = exports.TaskType = void 0;
@@ -13,13 +13,6 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
     exports.DedupeEntityType = undefined;
     exports.ActionCondition = undefined;
     exports.MapReduceStage = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'TaskType', function () { return getNsTask().TaskType; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'TaskStatus', function () { return getNsTask().TaskStatus; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'MasterSelectionMode', function () { return getNsTask().MasterSelectionMode; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'DedupeMode', function () { return getNsTask().DedupeMode; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'DedupeEntityType', function () { return getNsTask().DedupeEntityType; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'ActionCondition', function () { return getNsTask().ActionCondition; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'MapReduceStage', function () { return getNsTask().MapReduceStage; });
     function normalizeText(value) {
         if (value === null || value === undefined) {
             return '';
@@ -84,6 +77,9 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
         return buildTaskMetadata('submit', "Submit ".concat(taskType, " task").concat(summarySuffix), options);
     }
     function instrumentTaskInstance(taskInstance, createOptions) {
+        return (0, fail_open_1.instrumentReturnedObject)(taskInstance, function (target) { return replaceTaskMethods(target, createOptions); });
+    }
+    function replaceTaskMethods(taskInstance, createOptions) {
         if (typeof taskInstance.submit === 'function') {
             var originalSubmit_1 = taskInstance.submit.bind(taskInstance);
             taskInstance.submit = function () { return (0, telemetry_1.runWrappedOperation)(function () { return createTaskSubmitMetadata(createOptions); }, function () { return originalSubmit_1(); }); };
@@ -108,4 +104,6 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
     }
     exports.create = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildTaskMetadata('create', "Create ".concat(normalizeText(getOptionValue(options, 'taskType')) || 'NetSuite', " task"), options); }, function () { return instrumentTaskInstance(getNsTask().create(options), options); }); });
     exports.checkStatus = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildTaskMetadata('checkStatus', 'Check NetSuite task status', options); }, function () { return getNsTask().checkStatus(options); }); });
+    // Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+    (0, lazy_module_1.forwardModuleExports)(moduleExports, getNsTask);
 });

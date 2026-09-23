@@ -33,7 +33,18 @@ Each wrapper is a drop-in replacement for the corresponding `N/*` module — the
 | `@amerilux/netsuite-wrapper/task` | `N/task` | create, submit, addInboundDependency, checkStatus |
 | `@amerilux/netsuite-wrapper/log` | `N/log` | audit, debug, error, emergency |
 
-`https` and `url` are true wrappers (not pass-throughs) — they re-export the rest of the SuiteScript surface unchanged.
+Every wrapper module answers every member of its `N/*` module. Whatever it does not instrument (`query.Operator`, `search.createFilter`, `record.attach`, members a newer NetSuite release adds) is NetSuite's own, read on each access. This matters because the build swaps the module in every file of the bundle, including packages in `node_modules` that were never written with the wrapper in mind.
+
+## Never in the way
+
+The wrapper must never be the reason an application fails. Every part of it that watches a call steps aside when it fails:
+
+- **The call runs once and comes back unchanged.** A wrapped `N/*` call, a tracked entry point and an instrumented function each run exactly once, and the caller gets exactly what they returned (the same promise, when they return one) or exactly the error they threw.
+- **Telemetry failures are dropped.** A sink, span, metadata builder or scope lookup that throws, before or after the call, leaves the call untracked. A sink that cannot be created is replaced by a pass-through for the rest of the script, so its exporters are not registered again on every call.
+- **Returned objects stay NetSuite's.** When NetSuite refuses the instrumented method swapped onto an object it returned (a read-only `save`, a frozen query), the object comes back as NetSuite made it.
+- **Log calls always reach N/log.** If the wrapper cannot tag or split a log call, the call is written as the application made it.
+
+The first time a script's wrapper steps aside, it writes one `netsuite-wrapper stepped aside` entry to N/log with the stage (`before`, `after`, `skipped`, `instrument`, `log`) and the message, so a broken wrapper is visible without flooding the log.
 
 ## Usage shape
 
@@ -158,6 +169,8 @@ module.exports = {
     telemetryBootstrap: false,
 };
 ```
+
+With telemetry off, the build swaps only `N/log` (for chunk logging); every other `N/*` module is NetSuite's own, with nothing of the wrapper in between. A `modules` list in the config file (`modules: ['log', 'record']`) overrides that choice either way.
 
 ### Trace logging
 

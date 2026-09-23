@@ -1,5 +1,6 @@
 import { hasActiveTrackedExecution, recordFunctionError, recordFunctionInvocation } from './execution-tracking';
 import { snapshotFunctionArguments } from './value-snapshot';
+import { observe } from './fail-open';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 
@@ -136,7 +137,16 @@ export function getFunctionCallChainLabel(): string {
         .join(' -> ');
 }
 
+/**
+ * Runs an instrumented application function inside its function context. The bookkeeping runs
+ * inside observe(): if it fails, the function still runs once and its result or error reaches the
+ * caller unchanged.
+ */
 export function withFunctionContext<T>(context: FunctionCallerContext, work: () => T, argumentValues?: readonly unknown[]): T {
+    return observe(work, (observedWork) => trackFunctionCall(context, observedWork, argumentValues));
+}
+
+function trackFunctionCall<T>(context: FunctionCallerContext, work: () => T, argumentValues?: readonly unknown[]): T {
     const trackedContext = cloneFunctionContext(context);
     const parentContext = getPreferredActiveFunctionContext();
     const startedAt = Date.now();

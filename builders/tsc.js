@@ -5,6 +5,7 @@ const {
     loadNetSuiteWrapperConfig,
     resolveDefaultScopeKey,
     resolveExporterSettings,
+    resolveOverrideModules,
 } = require('../lib/build-support');
 const { transformNetSuiteWrapperSource } = require('../lib/instrumentation-core');
 const { listOverrideSpecifiers } = require('../lib/override-modules');
@@ -196,16 +197,23 @@ function createAmdBootstrapSource(sinkModuleId, sinkExportName, scopeKey, export
         `    var sinkExport = ${JSON.stringify(sinkExportName)};`,
         `    var sinkOptions = ${JSON.stringify(scopeKey || '')} || undefined;`,
         '    var activeSink = null;',
+        // A sink that cannot be created leaves the script untracked instead of retrying on every call.
+        '    var passThroughSink = { runOperation: function (metadata, work) { return work(); } };',
         '    function getOrCreateSink() {',
         '        if (activeSink) {',
         '            return activeSink;',
         '        }',
-        ...registrationLines,
-        '        var createSink = sinkExport === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExport];',
-        '        if (typeof createSink !== "function") {',
-        '            throw new Error("netsuite-wrapper bootstrap could not find sink export " + sinkExport + " in " + sinkModuleName);',
+        '        try {',
+        ...registrationLines.map((line) => `    ${line}`),
+        '            var createSink = sinkExport === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExport];',
+        '            if (typeof createSink !== "function") {',
+        '                throw new Error("netsuite-wrapper bootstrap could not find sink export " + sinkExport + " in " + sinkModuleName);',
+        '            }',
+        '            activeSink = createSink(sinkOptions);',
+        '        } catch (error) {',
+        '            activeSink = passThroughSink;',
+        '            throw error;',
         '        }',
-        '        activeSink = createSink(sinkOptions);',
         '        return activeSink;',
         '    }',
         '    telemetryModule.setWrapperTelemetrySink({',
@@ -336,6 +344,8 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
     const bootstrapFiles = resolveBootstrapFiles(resolvedOptions, outDir, wrapperOutputDir, rootDir);
     const instrumentationOptions = resolveTscInstrumentationOptions(options);
     const wrapperModules = collectWrapperModules(wrapperOutputDir);
+    // Every wrapper module is prepared below, but application code is only pointed at the swapped ones.
+    const swappedSpecifiers = new Set(resolveOverrideModules(resolvedOptions).map((moduleName) => `N/${moduleName}`));
 
     // Each wrapper pulls in its underlying NetSuite module via a synchronous require('N/...'), which
     // only resolves if that module is already loaded. Now that consuming scripts redirect N/<module>
@@ -486,7 +496,7 @@ function rewriteNetSuiteWrapperTscOutput(options = {}) {
             : null;
         const transformedSourceText = instrumentedResult ? instrumentedResult.code : sourceText;
         const resolveSpecifier = (specifier) => {
-            const targetFile = wrapperModules.get(specifier);
+            const targetFile = swappedSpecifiers.has(specifier) ? wrapperModules.get(specifier) : undefined;
             if (!targetFile) {
                 return specifier;
             }

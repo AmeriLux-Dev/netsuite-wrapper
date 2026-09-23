@@ -1,6 +1,5 @@
 const path = require('path');
 const {
-    DEFAULT_OVERRIDE_MODULES,
     DEFAULT_PACKAGE_NAME,
     createOverrideRequestSet,
     createWrapperModuleRequest,
@@ -8,6 +7,7 @@ const {
     loadNetSuiteWrapperConfig,
     resolveDefaultScopeKey,
     resolveExporterSettings,
+    resolveOverrideModules,
 } = require('../lib/build-support');
 const {
     transformNetSuiteWrapperSource,
@@ -213,16 +213,23 @@ function createAutoBootstrapModuleSource(resolvedOptions) {
         `const sinkExportName = ${JSON.stringify(resolvedOptions.telemetryBootstrap.sinkExport)};`,
         `const sinkOptions = ${JSON.stringify(resolvedOptions.telemetryBootstrap.scopeKey)} || undefined;`,
         'let activeSink = null;',
+        // A sink that cannot be created leaves the script untracked instead of retrying on every call.
+        'const passThroughSink = { runOperation(metadata, work) { return work(); } };',
         'function getOrCreateSink() {',
         '    if (activeSink) {',
         '        return activeSink;',
         '    }',
-        ...exporterRegistrationLines,
-        '    const createSink = sinkExportName === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExportName];',
-        '    if (typeof createSink !== "function") {',
-        '        throw new Error(`netsuite-wrapper bootstrap could not find sink export "${sinkExportName}" in ${sinkModuleName}`);',
+        '    try {',
+        ...exporterRegistrationLines.map((line) => `    ${line}`),
+        '        const createSink = sinkExportName === "default" ? (sinkModule.default || sinkModule) : sinkModule[sinkExportName];',
+        '        if (typeof createSink !== "function") {',
+        '            throw new Error(`netsuite-wrapper bootstrap could not find sink export "${sinkExportName}" in ${sinkModuleName}`);',
+        '        }',
+        '        activeSink = createSink(sinkOptions);',
+        '    } catch (error) {',
+        '        activeSink = passThroughSink;',
+        '        throw error;',
         '    }',
-        '    activeSink = createSink(sinkOptions);',
         '    return activeSink;',
         '}',
         'setWrapperTelemetrySink({',
@@ -238,7 +245,7 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
     const resolvedOptions = loadNetSuiteWrapperConfig(options);
     const packageName = resolvedOptions.packageName || DEFAULT_PACKAGE_NAME;
     const runtimeDir = resolvedOptions.runtimeDir ? path.resolve(resolvedOptions.runtimeDir) : undefined;
-    const overrideModules = resolvedOptions.modules || DEFAULT_OVERRIDE_MODULES;
+    const overrideModules = resolveOverrideModules(resolvedOptions);
     const overrideRequests = createOverrideRequestSet(overrideModules);
     const instrumentationOptions = resolveInstrumentationOptions(options);
     const defaultScopeKey = resolveDefaultScopeKey(options);

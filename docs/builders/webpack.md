@@ -108,6 +108,8 @@ module.exports = {
 };
 ```
 
+With telemetry off, only `N/log` is swapped for its wrapper (for chunk logging); every other `N/*` module stays NetSuite's own. A `modules` list overrides that choice.
+
 Custom sink:
 
 ```js
