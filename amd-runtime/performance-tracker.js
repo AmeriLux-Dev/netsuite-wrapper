@@ -9,7 +9,7 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
-define(["require", "exports", "./function-context", "./execution-tracking", "./telemetry-exporter", "./netsuite-record-exporter"], function (require, exports, function_context_1, execution_tracking_1, telemetry_exporter_1, netsuite_record_exporter_1) {
+define(["require", "exports", "./function-context", "./execution-tracking", "./telemetry-exporter", "./netsuite-record-exporter", "./fail-open"], function (require, exports, function_context_1, execution_tracking_1, telemetry_exporter_1, netsuite_record_exporter_1, fail_open_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.formatLocalParts = formatLocalParts;
@@ -701,7 +701,15 @@ define(["require", "exports", "./function-context", "./execution-tracking", "./t
         }
         return optionsOrScopeKey || {};
     }
+    /**
+     * Runs a script entry point (a Restlet's post, a Map/Reduce stage) as a tracked run. The tracking
+     * runs inside observe(): if it fails, the entry point still runs once and its result or error
+     * reaches NetSuite unchanged.
+     */
     function runTrackedScriptEntry(metadata, work) {
+        return (0, fail_open_1.observe)(work, function (observedWork) { return trackScriptEntry(metadata, observedWork); });
+    }
+    function trackScriptEntry(metadata, work) {
         var scopeKey = normalizeText(metadata.scopeKey);
         var telemetryMode = resolveTelemetryMode(scopeKey);
         if (!scopeKey || telemetryMode === 'off') {

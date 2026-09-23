@@ -1,6 +1,7 @@
 import type * as NsQuery from 'N/query';
 import { runWrappedOperation } from './telemetry';
-import { defineLazyExport } from './lazy-module';
+import { instrumentReturnedObject } from './fail-open';
+import { forwardModuleExports } from './lazy-module';
 import { wrapFunction } from './function-wrapper';
 
 declare const require: <T = unknown>(moduleName: string) => T;
@@ -24,21 +25,9 @@ export const DateId = undefined as unknown as Readonly<Record<string, NsQuery.Da
 export const runSuiteQLPaged = undefined as unknown as typeof NsQuery.runSuiteQLPaged;
 export const createPeriod = undefined as unknown as typeof NsQuery.createPeriod;
 export const createRelativeDate = undefined as unknown as typeof NsQuery.createRelativeDate;
-defineLazyExport(moduleExports, 'Operator', () => getNsQuery().Operator);
-defineLazyExport(moduleExports, 'Type', () => getNsQuery().Type);
-defineLazyExport(moduleExports, 'Aggregate', () => getNsQuery().Aggregate);
-defineLazyExport(moduleExports, 'ReturnType', () => getNsQuery().ReturnType);
-defineLazyExport(moduleExports, 'FieldContext', () => getNsQuery().FieldContext);
-defineLazyExport(moduleExports, 'SortLocale', () => getNsQuery().SortLocale);
-defineLazyExport(moduleExports, 'RelativeDateRange', () => getNsQuery().RelativeDateRange);
-defineLazyExport(moduleExports, 'DateId', () => (getNsQuery() as unknown as { DateId: unknown }).DateId);
-defineLazyExport(moduleExports, 'runSuiteQLPaged', () => getNsQuery().runSuiteQLPaged);
-defineLazyExport(moduleExports, 'createPeriod', () => getNsQuery().createPeriod);
-defineLazyExport(moduleExports, 'createRelativeDate', () => getNsQuery().createRelativeDate);
 // The types declare delete as an interface alone, with no value behind it; N/query still exports it at runtime.
 const deleteQuery = undefined as unknown as NsQuery.delete;
 export { deleteQuery as delete };
-defineLazyExport(moduleExports, 'delete', () => (getNsQuery() as unknown as { delete: unknown }).delete);
 
 type QueryInstance = {
     id?: number | string;
@@ -136,6 +125,10 @@ function buildQueryExecutionMetadata(action: string, queryInstance: QueryInstanc
 }
 
 function instrumentQueryPagedData<T extends { fetch?: (...args: any[]) => any }>(pagedData: T, queryInstance: QueryInstance): T {
+    return instrumentReturnedObject(pagedData, (target) => replaceQueryPageFetch(target, queryInstance));
+}
+
+function replaceQueryPageFetch<T extends { fetch?: (...args: any[]) => any }>(pagedData: T, queryInstance: QueryInstance): T {
     if (typeof pagedData.fetch === 'function') {
         const originalFetch = pagedData.fetch.bind(pagedData) as typeof pagedData.fetch;
         const wrappedFetch = wrapFunction<typeof originalFetch & { promise?: (options: Parameters<typeof originalFetch>[0]) => unknown }>(
@@ -151,6 +144,10 @@ function instrumentQueryPagedData<T extends { fetch?: (...args: any[]) => any }>
 }
 
 function instrumentQueryInstance<T extends QueryInstance>(queryInstance: T): T {
+    return instrumentReturnedObject(queryInstance, replaceQueryRunMethods);
+}
+
+function replaceQueryRunMethods<T extends QueryInstance>(queryInstance: T): T {
     if (typeof queryInstance.run === 'function') {
         const originalRun = queryInstance.run.bind(queryInstance) as typeof queryInstance.run;
         const wrappedRun = wrapFunction<typeof originalRun & { promise?: () => unknown }>(
@@ -187,3 +184,6 @@ export const load: typeof NsQuery.load = wrapFunction<typeof NsQuery.load>(
     (options: Parameters<typeof NsQuery.load>[0]) => runWrappedOperation(() => buildLoadMetadata(options), () => instrumentQueryInstance(getNsQuery().load(options))),
     (options: Parameters<typeof NsQuery.load.promise>[0]) => runWrappedOperation(() => buildLoadMetadata(options), () => getNsQuery().load.promise(options).then((queryInstance) => instrumentQueryInstance(queryInstance))),
 );
+
+// Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+forwardModuleExports(moduleExports, getNsQuery);

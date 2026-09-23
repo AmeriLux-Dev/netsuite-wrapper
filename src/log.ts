@@ -1,3 +1,6 @@
+import { reportWrapperFailure } from './fail-open';
+import { forwardModuleExports } from './lazy-module';
+
 declare const require: <T = unknown>(moduleName: string) => T;
 
 declare const exports: Record<string, unknown>;
@@ -282,13 +285,27 @@ function normalizeLogCall(titleOrOptions: string | LogCallOptions, details?: unk
 
 function emitLog(method: LogMethodName, titleOrOptions: string | LogCallOptions, details?: unknown): void {
     const nsLog = getNsLog();
-    const normalizedCall = normalizeLogCall(titleOrOptions, details);
-    const activeExecution = getActiveTrackedExecutionSnapshot();
-    const activeFunctionContext = getActiveFunctionContext();
-    const detailPrefix = buildTrackerDetailPrefix(activeExecution, activeFunctionContext);
-    const titleText = normalizedCall.title;
-    const detailBody = serializeDetailsForLog(normalizedCall.details);
-    const detailLines = buildDetailLines(detailPrefix, detailBody);
+    let normalizedCall: LogCallOptions;
+    let activeExecution: ActiveTrackedExecutionSnapshot | null;
+    let activeFunctionContext: ActiveFunctionContext | null;
+    let detailPrefix: string;
+    let titleText: string;
+    let detailBody: string;
+    let detailLines: string[];
+    try {
+        normalizedCall = normalizeLogCall(titleOrOptions, details);
+        activeExecution = getActiveTrackedExecutionSnapshot();
+        activeFunctionContext = getActiveFunctionContext();
+        detailPrefix = buildTrackerDetailPrefix(activeExecution, activeFunctionContext);
+        titleText = normalizedCall.title;
+        detailBody = serializeDetailsForLog(normalizedCall.details);
+        detailLines = buildDetailLines(detailPrefix, detailBody);
+    } catch (error) {
+        // The call is logged as the application made it, without tags or chunking.
+        reportWrapperFailure('log', error);
+        (nsLog[method] as (titleOrOptions: string | LogCallOptions, details?: unknown) => void)(titleOrOptions, details);
+        return;
+    }
 
     emitTraceLog('emitLog', {
         method,
@@ -337,3 +354,6 @@ export function emergency(title: string, details?: unknown): void;
 export function emergency(titleOrOptions: string | LogCallOptions, details?: unknown): void {
     emitLog('emergency', titleOrOptions, details);
 }
+
+// Last, so every export above is in place: anything N/log answers that is not instrumented here passes through.
+forwardModuleExports(exports, getNsLog);

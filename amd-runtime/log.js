@@ -9,7 +9,7 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
-define(["require", "exports"], function (require, exports) {
+define(["require", "exports", "./fail-open", "./lazy-module"], function (require, exports, fail_open_1, lazy_module_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isTraceLogEnabled = isTraceLogEnabled;
@@ -225,13 +225,28 @@ define(["require", "exports"], function (require, exports) {
     }
     function emitLog(method, titleOrOptions, details) {
         var nsLog = getNsLog();
-        var normalizedCall = normalizeLogCall(titleOrOptions, details);
-        var activeExecution = getActiveTrackedExecutionSnapshot();
-        var activeFunctionContext = getActiveFunctionContext();
-        var detailPrefix = buildTrackerDetailPrefix(activeExecution, activeFunctionContext);
-        var titleText = normalizedCall.title;
-        var detailBody = serializeDetailsForLog(normalizedCall.details);
-        var detailLines = buildDetailLines(detailPrefix, detailBody);
+        var normalizedCall;
+        var activeExecution;
+        var activeFunctionContext;
+        var detailPrefix;
+        var titleText;
+        var detailBody;
+        var detailLines;
+        try {
+            normalizedCall = normalizeLogCall(titleOrOptions, details);
+            activeExecution = getActiveTrackedExecutionSnapshot();
+            activeFunctionContext = getActiveFunctionContext();
+            detailPrefix = buildTrackerDetailPrefix(activeExecution, activeFunctionContext);
+            titleText = normalizedCall.title;
+            detailBody = serializeDetailsForLog(normalizedCall.details);
+            detailLines = buildDetailLines(detailPrefix, detailBody);
+        }
+        catch (error) {
+            // The call is logged as the application made it, without tags or chunking.
+            (0, fail_open_1.reportWrapperFailure)('log', error);
+            nsLog[method](titleOrOptions, details);
+            return;
+        }
         emitTraceLog('emitLog', {
             method: method,
             inputTitle: normalizedCall.title,
@@ -266,4 +281,6 @@ define(["require", "exports"], function (require, exports) {
     function emergency(titleOrOptions, details) {
         emitLog('emergency', titleOrOptions, details);
     }
+    // Last, so every export above is in place: anything N/log answers that is not instrumented here passes through.
+    (0, lazy_module_1.forwardModuleExports)(exports, getNsLog);
 });

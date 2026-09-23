@@ -17,6 +17,7 @@ import {
     type TelemetrySpan,
 } from './telemetry-exporter';
 import { createNetSuiteRecordExporter } from './netsuite-record-exporter';
+import { observe } from './fail-open';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 
@@ -875,7 +876,16 @@ function normalizeSinkOptions(optionsOrScopeKey?: string | PerformanceTrackerSin
     return optionsOrScopeKey || {};
 }
 
+/**
+ * Runs a script entry point (a Restlet's post, a Map/Reduce stage) as a tracked run. The tracking
+ * runs inside observe(): if it fails, the entry point still runs once and its result or error
+ * reaches NetSuite unchanged.
+ */
 export function runTrackedScriptEntry<T>(metadata: TrackedScriptEntryMetadata, work: () => T): T {
+    return observe(work, (observedWork) => trackScriptEntry(metadata, observedWork));
+}
+
+function trackScriptEntry<T>(metadata: TrackedScriptEntryMetadata, work: () => T): T {
     const scopeKey = normalizeText(metadata.scopeKey);
     const telemetryMode = resolveTelemetryMode(scopeKey);
     if (!scopeKey || telemetryMode === 'off') {

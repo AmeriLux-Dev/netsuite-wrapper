@@ -1,4 +1,4 @@
-define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, lazy_module_1, function_wrapper_1) {
+define(["require", "exports", "./telemetry", "./fail-open", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, fail_open_1, lazy_module_1, function_wrapper_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.delete = exports.deleteRecord = exports.submitFields = exports.transform = exports.copy = exports.create = exports.load = exports.detach = exports.attach = exports.Type = void 0;
@@ -19,11 +19,8 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
         return options[key];
     }
     exports.Type = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Type', function () { return getNsRecord().Type; });
     exports.attach = undefined;
     exports.detach = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'attach', function () { return getNsRecord().attach; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'detach', function () { return getNsRecord().detach; });
     function buildLoadMetadata(options) {
         return {
             module: 'record',
@@ -104,6 +101,9 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
         };
     }
     function instrumentRecordInstance(recordInstance) {
+        return (0, fail_open_1.instrumentReturnedObject)(recordInstance, replaceRecordSave);
+    }
+    function replaceRecordSave(recordInstance) {
         var instrumentedRecord = recordInstance;
         if (!instrumentedRecord || typeof instrumentedRecord !== 'object' || instrumentedRecord.__ptrkSaveInstrumented || typeof instrumentedRecord.save !== 'function') {
             return recordInstance;
@@ -129,4 +129,6 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     var deleteRecordBase = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildDeleteMetadata(options); }, function () { return getNsRecord().delete(options); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildDeleteMetadata(options); }, function () { return getNsRecord().delete.promise(options); }); });
     exports.delete = deleteRecordBase;
     exports.deleteRecord = deleteRecordBase;
+    // Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+    (0, lazy_module_1.forwardModuleExports)(moduleExports, getNsRecord);
 });

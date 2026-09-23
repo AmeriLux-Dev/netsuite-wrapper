@@ -9,7 +9,7 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
-define(["require", "exports", "./execution-tracking", "./value-snapshot"], function (require, exports, execution_tracking_1, value_snapshot_1) {
+define(["require", "exports", "./execution-tracking", "./value-snapshot", "./fail-open"], function (require, exports, execution_tracking_1, value_snapshot_1, fail_open_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getActiveFunctionContext = getActiveFunctionContext;
@@ -118,7 +118,15 @@ define(["require", "exports", "./execution-tracking", "./value-snapshot"], funct
             .filter(Boolean)
             .join(' -> ');
     }
+    /**
+     * Runs an instrumented application function inside its function context. The bookkeeping runs
+     * inside observe(): if it fails, the function still runs once and its result or error reaches the
+     * caller unchanged.
+     */
     function withFunctionContext(context, work, argumentValues) {
+        return (0, fail_open_1.observe)(work, function (observedWork) { return trackFunctionCall(context, observedWork, argumentValues); });
+    }
+    function trackFunctionCall(context, work, argumentValues) {
         var trackedContext = cloneFunctionContext(context);
         var parentContext = getPreferredActiveFunctionContext();
         var startedAt = Date.now();

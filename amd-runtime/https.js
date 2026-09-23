@@ -11,13 +11,7 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     exports.Encoding = undefined;
     exports.RedirectType = undefined;
     exports.createSecureString = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Method', function () { return getNsHttps().Method; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'CacheDuration', function () { return getNsHttps().CacheDuration; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Encoding', function () { return getNsHttps().Encoding; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'RedirectType', function () { return getNsHttps().RedirectType; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createSecureString', function () { return getNsHttps().createSecureString; });
     exports.createSecretKey = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createSecretKey', function () { return getNsHttps().createSecretKey; });
     function normalizeText(value) {
         if (value === null || value === undefined) {
             return '';
@@ -127,4 +121,6 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     exports.requestRestlet = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRequestMetadata('requestRestlet', 'HTTPS RESTlet request', options); }, function () { return getNsHttps().requestRestlet(options); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRequestMetadata('requestRestlet', 'HTTPS RESTlet request', options); }, function () { return getNsHttps().requestRestlet.promise(options); }); });
     exports.requestSuitelet = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRequestMetadata('requestSuitelet', 'HTTPS Suitelet request', options); }, function () { return getNsHttps().requestSuitelet(options); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRequestMetadata('requestSuitelet', 'HTTPS Suitelet request', options); }, function () { return getNsHttps().requestSuitelet.promise(options); }); });
     exports.requestSuiteTalkRest = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRequestMetadata('requestSuiteTalkRest', 'HTTPS SuiteTalk REST request', options); }, function () { return getNsHttps().requestSuiteTalkRest(options); }); });
+    // Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+    (0, lazy_module_1.forwardModuleExports)(moduleExports, getNsHttps);
 });

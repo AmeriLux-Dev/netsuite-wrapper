@@ -7,7 +7,6 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
         return require('N/url');
     }
     exports.HostType = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'HostType', function () { return getNsUrl().HostType; });
     function normalizeText(value) {
         if (value === null || value === undefined) {
             return '';
@@ -87,4 +86,6 @@ define(["require", "exports", "./telemetry", "./lazy-module"], function (require
     exports.resolveRecord = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('resolveRecord', 'Resolve NetSuite record URL', options); }, function () { return getNsUrl().resolveRecord(options); }); });
     exports.resolveScript = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('resolveScript', 'Resolve NetSuite script URL', options); }, function () { return getNsUrl().resolveScript(options); }); });
     exports.resolveTaskLink = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildUrlMetadata('resolveTaskLink', 'Resolve NetSuite task link URL', options); }, function () { return getNsUrl().resolveTaskLink(options); }); });
+    // Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+    (0, lazy_module_1.forwardModuleExports)(moduleExports, getNsUrl);
 });

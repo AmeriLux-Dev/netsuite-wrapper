@@ -1,6 +1,7 @@
 import type * as NsRecord from 'N/record';
 import { runWrappedOperation } from './telemetry';
-import { defineLazyExport } from './lazy-module';
+import { instrumentReturnedObject } from './fail-open';
+import { forwardModuleExports } from './lazy-module';
 import { wrapFunction } from './function-wrapper';
 
 declare const require: <T = unknown>(moduleName: string) => T;
@@ -39,12 +40,9 @@ function getOptionValue(options: unknown, key: string): unknown {
 }
 
 export const Type = undefined as unknown as typeof NsRecord.Type;
-defineLazyExport(moduleExports, 'Type', () => getNsRecord().Type);
 
 export const attach = undefined as unknown as typeof NsRecord.attach;
 export const detach = undefined as unknown as typeof NsRecord.detach;
-defineLazyExport(moduleExports, 'attach', () => getNsRecord().attach);
-defineLazyExport(moduleExports, 'detach', () => getNsRecord().detach);
 
 function buildLoadMetadata(options: Parameters<typeof NsRecord.load>[0]) {
     return {
@@ -133,6 +131,10 @@ function buildSaveMetadata(recordInstance: RecordInstanceWithSave, options?: Sav
 }
 
 function instrumentRecordInstance<TRecord extends NsRecord.Record>(recordInstance: TRecord): TRecord {
+    return instrumentReturnedObject(recordInstance, replaceRecordSave);
+}
+
+function replaceRecordSave<TRecord extends NsRecord.Record>(recordInstance: TRecord): TRecord {
     const instrumentedRecord = recordInstance as RecordInstanceWithSave;
 
     if (!instrumentedRecord || typeof instrumentedRecord !== 'object' || instrumentedRecord.__ptrkSaveInstrumented || typeof instrumentedRecord.save !== 'function') {
@@ -194,3 +196,6 @@ const deleteRecordBase: typeof NsRecord.delete = wrapFunction<typeof NsRecord.de
 
 export const deleteRecord: typeof NsRecord.delete = deleteRecordBase;
 export { deleteRecordBase as delete };
+
+// Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+forwardModuleExports(moduleExports, getNsRecord);

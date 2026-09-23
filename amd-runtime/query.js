@@ -1,4 +1,4 @@
-define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, lazy_module_1, function_wrapper_1) {
+define(["require", "exports", "./telemetry", "./fail-open", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, fail_open_1, lazy_module_1, function_wrapper_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.load = exports.runSuiteQL = exports.create = exports.delete = exports.createRelativeDate = exports.createPeriod = exports.runSuiteQLPaged = exports.DateId = exports.RelativeDateRange = exports.SortLocale = exports.FieldContext = exports.ReturnType = exports.Aggregate = exports.Type = exports.Operator = void 0;
@@ -18,21 +18,9 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     exports.runSuiteQLPaged = undefined;
     exports.createPeriod = undefined;
     exports.createRelativeDate = undefined;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Operator', function () { return getNsQuery().Operator; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Type', function () { return getNsQuery().Type; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Aggregate', function () { return getNsQuery().Aggregate; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'ReturnType', function () { return getNsQuery().ReturnType; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'FieldContext', function () { return getNsQuery().FieldContext; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'SortLocale', function () { return getNsQuery().SortLocale; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'RelativeDateRange', function () { return getNsQuery().RelativeDateRange; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'DateId', function () { return getNsQuery().DateId; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'runSuiteQLPaged', function () { return getNsQuery().runSuiteQLPaged; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createPeriod', function () { return getNsQuery().createPeriod; });
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createRelativeDate', function () { return getNsQuery().createRelativeDate; });
     // The types declare delete as an interface alone, with no value behind it; N/query still exports it at runtime.
     var deleteQuery = undefined;
     exports.delete = deleteQuery;
-    (0, lazy_module_1.defineLazyExport)(moduleExports, 'delete', function () { return getNsQuery().delete; });
     function normalizeQueryText(value) {
         if (typeof value !== 'string') {
             return '';
@@ -107,6 +95,9 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
         };
     }
     function instrumentQueryPagedData(pagedData, queryInstance) {
+        return (0, fail_open_1.instrumentReturnedObject)(pagedData, function (target) { return replaceQueryPageFetch(target, queryInstance); });
+    }
+    function replaceQueryPageFetch(pagedData, queryInstance) {
         if (typeof pagedData.fetch === 'function') {
             var originalFetch_1 = pagedData.fetch.bind(pagedData);
             var wrappedFetch = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('fetchPage', queryInstance); }, function () { return originalFetch_1(options); }); }, 'promise' in originalFetch_1 && typeof originalFetch_1.promise === 'function'
@@ -117,6 +108,9 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
         return pagedData;
     }
     function instrumentQueryInstance(queryInstance) {
+        return (0, fail_open_1.instrumentReturnedObject)(queryInstance, replaceQueryRunMethods);
+    }
+    function replaceQueryRunMethods(queryInstance) {
         if (typeof queryInstance.run === 'function') {
             var originalRun_1 = queryInstance.run.bind(queryInstance);
             var wrappedRun = (0, function_wrapper_1.wrapFunction)(function () { return (0, telemetry_1.runWrappedOperation)(function () { return buildQueryExecutionMetadata('run', queryInstance); }, function () { return originalRun_1(); }); }, 'promise' in originalRun_1 && typeof originalRun_1.promise === 'function'
@@ -136,4 +130,6 @@ define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrappe
     exports.create = (function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildCreateMetadata(options); }, function () { return instrumentQueryInstance(getNsQuery().create(options)); }); });
     exports.runSuiteQL = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRunSuiteQlMetadata(options); }, function () { return getNsQuery().runSuiteQL(options); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildRunSuiteQlMetadata(options); }, function () { return getNsQuery().runSuiteQL.promise(options); }); });
     exports.load = (0, function_wrapper_1.wrapFunction)(function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return instrumentQueryInstance(getNsQuery().load(options)); }); }, function (options) { return (0, telemetry_1.runWrappedOperation)(function () { return buildLoadMetadata(options); }, function () { return getNsQuery().load.promise(options).then(function (queryInstance) { return instrumentQueryInstance(queryInstance); }); }); });
+    // Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+    (0, lazy_module_1.forwardModuleExports)(moduleExports, getNsQuery);
 });

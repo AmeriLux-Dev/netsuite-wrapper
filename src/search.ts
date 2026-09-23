@@ -1,6 +1,7 @@
 import type * as NsSearch from 'N/search';
 import { runWrappedOperation } from './telemetry';
-import { defineLazyExport } from './lazy-module';
+import { instrumentReturnedObject } from './fail-open';
+import { forwardModuleExports } from './lazy-module';
 import { wrapFunction } from './function-wrapper';
 
 declare const require: <T = unknown>(moduleName: string) => T;
@@ -43,10 +44,6 @@ export const Type = undefined as unknown as typeof NsSearch.Type;
 export const Operator = undefined as unknown as typeof NsSearch.Operator;
 export const Sort = undefined as unknown as typeof NsSearch.Sort;
 export const Summary = undefined as unknown as typeof NsSearch.Summary;
-defineLazyExport(moduleExports, 'Type', () => getNsSearch().Type);
-defineLazyExport(moduleExports, 'Operator', () => getNsSearch().Operator);
-defineLazyExport(moduleExports, 'Sort', () => getNsSearch().Sort);
-defineLazyExport(moduleExports, 'Summary', () => getNsSearch().Summary);
 
 export const SettingName = undefined as unknown as typeof NsSearch.SettingName;
 export const ConsolidationEnum = undefined as unknown as typeof NsSearch.ConsolidationEnum;
@@ -58,15 +55,6 @@ export const duplicates = undefined as unknown as typeof NsSearch.duplicates;
 export const global = undefined as unknown as typeof NsSearch.global;
 const deleteSearch = undefined as unknown as typeof NsSearch.delete;
 export { deleteSearch as delete };
-defineLazyExport(moduleExports, 'SettingName', () => getNsSearch().SettingName);
-defineLazyExport(moduleExports, 'ConsolidationEnum', () => getNsSearch().ConsolidationEnum);
-defineLazyExport(moduleExports, 'IncludePeriodTransactionEnum', () => getNsSearch().IncludePeriodTransactionEnum);
-defineLazyExport(moduleExports, 'createColumn', () => getNsSearch().createColumn);
-defineLazyExport(moduleExports, 'createFilter', () => getNsSearch().createFilter);
-defineLazyExport(moduleExports, 'createSetting', () => getNsSearch().createSetting);
-defineLazyExport(moduleExports, 'duplicates', () => getNsSearch().duplicates);
-defineLazyExport(moduleExports, 'global', () => getNsSearch().global);
-defineLazyExport(moduleExports, 'delete', () => getNsSearch().delete);
 
 function normalizeColumns(value: unknown): string {
     if (!Array.isArray(value)) {
@@ -136,6 +124,10 @@ function buildSearchExecutionMetadata(action: string, searchInstance: SearchInst
 }
 
 function instrumentSearchResultSet<T extends { getRange?: (...args: any[]) => any; each?: (...args: any[]) => any; columns?: unknown[] }>(resultSet: T, searchInstance: SearchInstance): T {
+    return instrumentReturnedObject(resultSet, (target) => replaceResultSetGetRange(target, searchInstance));
+}
+
+function replaceResultSetGetRange<T extends { getRange?: (...args: any[]) => any; each?: (...args: any[]) => any; columns?: unknown[] }>(resultSet: T, searchInstance: SearchInstance): T {
     if (typeof resultSet.getRange === 'function') {
         const originalGetRange = resultSet.getRange.bind(resultSet) as typeof resultSet.getRange;
         const wrappedGetRange = wrapFunction<typeof originalGetRange & { promise?: (options: Parameters<typeof originalGetRange>[0]) => unknown }>(
@@ -157,6 +149,10 @@ function instrumentSearchResultSet<T extends { getRange?: (...args: any[]) => an
 }
 
 function instrumentSearchPagedData<T extends { fetch?: (...args: any[]) => any }>(pagedData: T, searchInstance: SearchInstance): T {
+    return instrumentReturnedObject(pagedData, (target) => replaceSearchPageFetch(target, searchInstance));
+}
+
+function replaceSearchPageFetch<T extends { fetch?: (...args: any[]) => any }>(pagedData: T, searchInstance: SearchInstance): T {
     if (typeof pagedData.fetch === 'function') {
         const originalFetch = pagedData.fetch.bind(pagedData) as typeof pagedData.fetch;
         const wrappedFetch = wrapFunction<typeof originalFetch & { promise?: (options: Parameters<typeof originalFetch>[0]) => unknown }>(
@@ -176,6 +172,10 @@ function instrumentSearchPagedData<T extends { fetch?: (...args: any[]) => any }
 }
 
 function instrumentSearchInstance<T extends SearchInstance>(searchInstance: T): T {
+    return instrumentReturnedObject(searchInstance, replaceSearchRunMethods);
+}
+
+function replaceSearchRunMethods<T extends SearchInstance>(searchInstance: T): T {
     if (typeof searchInstance.run === 'function') {
         const originalRun = searchInstance.run.bind(searchInstance) as typeof searchInstance.run;
         (searchInstance as { run: typeof originalRun }).run = (() => runWrappedOperation(() => buildSearchExecutionMetadata('run', searchInstance), () => instrumentSearchResultSet(originalRun(), searchInstance))) as typeof originalRun;
@@ -213,3 +213,6 @@ export const lookupFields: typeof NsSearch.lookupFields = wrapFunction<typeof Ns
     (options: Parameters<typeof NsSearch.lookupFields>[0]) => runWrappedOperation(() => buildLookupFieldsMetadata(options), () => getNsSearch().lookupFields(options)),
     ((options: Parameters<typeof NsSearch.lookupFields.promise>[0]) => runWrappedOperation(() => buildLookupFieldsMetadata(options), () => getNsSearch().lookupFields.promise(options))) as typeof NsSearch.lookupFields.promise,
 );
+
+// Last, so every export above is in place: the N module fills the placeholders and anything not instrumented.
+forwardModuleExports(moduleExports, getNsSearch);

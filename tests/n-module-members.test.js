@@ -12,7 +12,9 @@ const markers = new Map();
 const originalModuleLoad = Module._load;
 Module._load = function patchedLoad(request) {
     if (/^N\//.test(request)) {
-        return new Proxy({}, {
+        // N/query also answers a member no type declaration knows, as a newer NetSuite release would; it is the
+        // only member a stub lists, so every other member reaches the wrapper through its placeholders alone.
+        return new Proxy(request === 'N/query' ? { futureMember: { marker: 'N/query.futureMember' } } : {}, {
             get: (_target, member) => {
                 const key = `${request}.${String(member)}`;
                 if (!markers.has(key)) {
@@ -57,4 +59,9 @@ test('a forwarded member is the N module\'s own', () => {
     const query = require('../dist/query');
     assert.equal(query.Operator, markers.get('N/query.Operator'));
     assert.equal(query.FieldContext, markers.get('N/query.FieldContext'));
+});
+
+test('a member the types do not declare still passes through', () => {
+    const query = require('../dist/query');
+    assert.deepEqual(query.futureMember, { marker: 'N/query.futureMember' });
 });

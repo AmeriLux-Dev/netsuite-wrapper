@@ -1,4 +1,4 @@
-define(["require", "exports"], function (require, exports) {
+define(["require", "exports", "./fail-open"], function (require, exports, fail_open_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getWrapperTelemetrySink = getWrapperTelemetrySink;
@@ -28,9 +28,17 @@ define(["require", "exports"], function (require, exports) {
             : metadata;
     }
     function runWrappedOperation(metadata, work) {
-        if (!activeSink || (typeof activeSink.isActive === 'function' && !activeSink.isActive())) {
+        var sink = activeSink;
+        if (!sink) {
             return work();
         }
-        return activeSink.runOperation(resolveWrapperOperationMetadata(metadata), work);
+        // Everything the sink does, including deciding whether it is active and building the metadata,
+        // runs inside observe(): a sink that fails never stops the N/* call or changes what it returns.
+        return (0, fail_open_1.observe)(work, function (observedWork) {
+            if (typeof sink.isActive === 'function' && !sink.isActive()) {
+                return observedWork();
+            }
+            return sink.runOperation(resolveWrapperOperationMetadata(metadata), observedWork);
+        });
     }
 });

@@ -732,3 +732,61 @@ test('legacy root entrypoints re-export the builder implementations', () => {
     assert.equal(legacyTsc, builderTsc);
     assert.equal(legacyInstrumentationLoader, builderInstrumentationLoader);
 });
+test('with telemetry off only N/log is swapped; an explicit module list still wins', () => {
+    const { resolveOverrideModules } = require('../lib/build-support');
+
+    assert.deepEqual(resolveOverrideModules(loadNetSuiteWrapperConfig({ telemetryBootstrap: false })), ['log']);
+    assert.deepEqual(resolveOverrideModules(loadNetSuiteWrapperConfig({ telemetryBootstrap: false, modules: ['record'] })), ['record']);
+
+    const telemetryOnModules = resolveOverrideModules(loadNetSuiteWrapperConfig({ telemetryBootstrap: { integration: 'performance-tracker' } }));
+    for (const moduleName of ['https', 'log', 'query', 'record', 'runtime', 'search', 'task', 'url']) {
+        assert.ok(telemetryOnModules.includes(moduleName), `telemetry on should swap N/${moduleName}`);
+    }
+});
+
+test('webpack with telemetry off leaves every N module but N/log to NetSuite', () => {
+    const externals = builderWebpack.createNetSuiteWrapperWebpackExternals({ telemetryBootstrap: false });
+    const resolveExternal = (request) => {
+        let externalValue;
+        externals({ context: '/app/node_modules/@amerilux/netsuite-repository/dist/query', request }, (_error, value) => {
+            externalValue = value;
+        });
+        return externalValue;
+    };
+
+    assert.equal(resolveExternal('N/query'), 'amd N/query');
+    assert.equal(resolveExternal('N/record'), 'amd N/record');
+    assert.equal(resolveExternal('N/log'), undefined, 'N/log is left to the wrapper swap');
+});
+
+test('tsc with telemetry off points application code at the N/log wrapper only', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-telemetry-off-'));
+    const outDir = path.join(tempRoot, 'dist');
+    const runtimeDir = path.join(tempRoot, 'runtime');
+
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'lazy-module.js'), 'define(["require", "exports"], function (require, exports) { "use strict"; exports.forwardModuleExports = function () {}; });');
+    for (const moduleName of ['log', 'record']) {
+        fs.writeFileSync(
+            path.join(runtimeDir, `${moduleName}.js`),
+            `define(["require", "exports"], function (require, exports) { "use strict"; function getModule() { return require("N/${moduleName}"); } exports.debug = function () { return getModule(); }; });`,
+        );
+    }
+    fs.writeFileSync(path.join(outDir, 'script.js'), 'define(["require", "exports", "N/record", "N/log"], function (require, exports, record, log) { "use strict"; exports.flag = true; });');
+
+    rewriteNetSuiteWrapperTscOutput({
+        outDir,
+        runtimeDir,
+        wrapperSubdir: 'netsuite-wrapper',
+        telemetryBootstrap: false,
+        instrumentation: false,
+    });
+
+    const script = fs.readFileSync(path.join(outDir, 'script.js'), 'utf8');
+    const deps = Array.from(script.match(/define\(\s*\[([^\]]*)\]/)[1].matchAll(/['"]([^'"]+)['"]/g), (match) => match[1]);
+    assert.ok(deps.includes('N/record'), 'N/record stays NetSuite\'s own');
+    assert.ok(deps.includes('./netsuite-wrapper/log'), 'N/log is pointed at the wrapper');
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
