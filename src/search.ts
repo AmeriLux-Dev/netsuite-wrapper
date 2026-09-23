@@ -48,6 +48,26 @@ defineLazyExport(moduleExports, 'Operator', () => getNsSearch().Operator);
 defineLazyExport(moduleExports, 'Sort', () => getNsSearch().Sort);
 defineLazyExport(moduleExports, 'Summary', () => getNsSearch().Summary);
 
+export const SettingName = undefined as unknown as typeof NsSearch.SettingName;
+export const ConsolidationEnum = undefined as unknown as typeof NsSearch.ConsolidationEnum;
+export const IncludePeriodTransactionEnum = undefined as unknown as typeof NsSearch.IncludePeriodTransactionEnum;
+export const createColumn = undefined as unknown as typeof NsSearch.createColumn;
+export const createFilter = undefined as unknown as typeof NsSearch.createFilter;
+export const createSetting = undefined as unknown as typeof NsSearch.createSetting;
+export const duplicates = undefined as unknown as typeof NsSearch.duplicates;
+export const global = undefined as unknown as typeof NsSearch.global;
+const deleteSearch = undefined as unknown as typeof NsSearch.delete;
+export { deleteSearch as delete };
+defineLazyExport(moduleExports, 'SettingName', () => getNsSearch().SettingName);
+defineLazyExport(moduleExports, 'ConsolidationEnum', () => getNsSearch().ConsolidationEnum);
+defineLazyExport(moduleExports, 'IncludePeriodTransactionEnum', () => getNsSearch().IncludePeriodTransactionEnum);
+defineLazyExport(moduleExports, 'createColumn', () => getNsSearch().createColumn);
+defineLazyExport(moduleExports, 'createFilter', () => getNsSearch().createFilter);
+defineLazyExport(moduleExports, 'createSetting', () => getNsSearch().createSetting);
+defineLazyExport(moduleExports, 'duplicates', () => getNsSearch().duplicates);
+defineLazyExport(moduleExports, 'global', () => getNsSearch().global);
+defineLazyExport(moduleExports, 'delete', () => getNsSearch().delete);
+
 function normalizeColumns(value: unknown): string {
     if (!Array.isArray(value)) {
         return '';

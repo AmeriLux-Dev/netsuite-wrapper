@@ -1,10 +1,38 @@
-define(["require", "exports", "./telemetry", "./function-wrapper"], function (require, exports, telemetry_1, function_wrapper_1) {
+define(["require", "exports", "./telemetry", "./lazy-module", "./function-wrapper"], function (require, exports, telemetry_1, lazy_module_1, function_wrapper_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.load = exports.runSuiteQL = exports.create = void 0;
+    exports.load = exports.runSuiteQL = exports.create = exports.delete = exports.createRelativeDate = exports.createPeriod = exports.runSuiteQLPaged = exports.DateId = exports.RelativeDateRange = exports.SortLocale = exports.FieldContext = exports.ReturnType = exports.Aggregate = exports.Type = exports.Operator = void 0;
+    var moduleExports = exports;
     function getNsQuery() {
         return require('N/query');
     }
+    exports.Operator = undefined;
+    exports.Type = undefined;
+    exports.Aggregate = undefined;
+    exports.ReturnType = undefined;
+    exports.FieldContext = undefined;
+    exports.SortLocale = undefined;
+    exports.RelativeDateRange = undefined;
+    // The types declare DateId a const enum, which has no value to take `typeof` of; N/query still exports it at runtime.
+    exports.DateId = undefined;
+    exports.runSuiteQLPaged = undefined;
+    exports.createPeriod = undefined;
+    exports.createRelativeDate = undefined;
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Operator', function () { return getNsQuery().Operator; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Type', function () { return getNsQuery().Type; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'Aggregate', function () { return getNsQuery().Aggregate; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'ReturnType', function () { return getNsQuery().ReturnType; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'FieldContext', function () { return getNsQuery().FieldContext; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'SortLocale', function () { return getNsQuery().SortLocale; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'RelativeDateRange', function () { return getNsQuery().RelativeDateRange; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'DateId', function () { return getNsQuery().DateId; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'runSuiteQLPaged', function () { return getNsQuery().runSuiteQLPaged; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createPeriod', function () { return getNsQuery().createPeriod; });
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'createRelativeDate', function () { return getNsQuery().createRelativeDate; });
+    // The types declare delete as an interface alone, with no value behind it; N/query still exports it at runtime.
+    var deleteQuery = undefined;
+    exports.delete = deleteQuery;
+    (0, lazy_module_1.defineLazyExport)(moduleExports, 'delete', function () { return getNsQuery().delete; });
     function normalizeQueryText(value) {
         if (typeof value !== 'string') {
             return '';
