@@ -148,7 +148,7 @@ log.error({
 
 Only available on the options-object call; the string form (`log.audit(title, details)`) never carries attributes.
 
-A non-empty `attributes` object is forwarded as-is on the telemetry entry (`TelemetryLogEntry.attributes`) and, budget permitting, appended to the N/log detail as a versioned tail — one space, the marker `[[NSW_ATTR|1]]`, then `JSON.stringify(attributes)`:
+A non-empty `attributes` object is copied at the time of the call onto the telemetry entry (`TelemetryLogEntry.attributes`), so changing the object afterwards does not change what was logged, and, budget permitting, appended to the N/log detail as a versioned tail — one space, the marker `[[NSW_ATTR|1]]`, then `JSON.stringify(attributes)`:
 
 ```
 [exec_m2x1_9k] [fn:submit::to-request] no source location [[NSW_ATTR|1]]{"record_type":"transferorder","record_id":48812}

@@ -127,23 +127,35 @@ export function createHttpsExporter(options: HttpsExporterOptions): TelemetryExp
         name: HTTPS_EXPORTER_NAME,
         acceptsLogEntries: true,
         export(batch: TelemetryExportBatch): void {
-            const payload = buildHttpsExportPayload(batch, source);
-            const body = JSON.stringify(options.format ? options.format(payload) : payload);
-            const headers: Record<string, HttpsHeaderValue> = {
-                'Content-Type': 'application/json',
-                ...(options.headers || {}),
-            };
-            const authorizationHeaderValue = buildAuthorizationHeaderValue(options);
-            if (authorizationHeaderValue) {
-                headers[authorizationHeaderName] = authorizationHeaderValue;
-            }
+            try {
+                const payload = buildHttpsExportPayload(batch, source);
+                const body = JSON.stringify(options.format ? options.format(payload) : payload);
+                const headers: Record<string, HttpsHeaderValue> = {
+                    'Content-Type': 'application/json',
+                    ...(options.headers || {}),
+                };
+                const authorizationHeaderValue = buildAuthorizationHeaderValue(options);
+                if (authorizationHeaderValue) {
+                    headers[authorizationHeaderName] = authorizationHeaderValue;
+                }
 
-            const response = getNsHttps().post({ url, body, headers: headers as unknown as Record<string, string> });
-            if (response.code >= 300) {
-                getNsLog().error({
-                    title: 'netsuite-wrapper https export rejected',
-                    details: JSON.stringify({ url, code: response.code, executionId: batch.executionId, spanCount: batch.spans.length, logCount: batch.logs.length }),
-                });
+                const response = getNsHttps().post({ url, body, headers: headers as unknown as Record<string, string> });
+                if (response.code >= 300) {
+                    getNsLog().error({
+                        title: 'netsuite-wrapper https export rejected',
+                        details: JSON.stringify({ url, code: response.code, executionId: batch.executionId, spanCount: batch.spans.length, logCount: batch.logs.length }),
+                    });
+                }
+            } catch (error) {
+                // The batch is not retried; the failure is reported with what was in it.
+                try {
+                    getNsLog().error({
+                        title: 'netsuite-wrapper https export failed',
+                        details: JSON.stringify({ url, message: error instanceof Error ? error.message : String(error), executionId: batch.executionId, spanCount: batch.spans.length, logCount: batch.logs.length }),
+                    });
+                } catch (_logError) {
+                    // Nothing left to report to.
+                }
             }
         },
     };

@@ -193,16 +193,32 @@ test('a Proxy that throws on key enumeration drops the whole payload with size -
     assert.equal(nsLogCalls[0].details, `body ${ATTR_MARKER}{"_dropped":true,"_size":-1}`);
 });
 
-test('circular attributes still reach the telemetry entry in full', () => {
+test('circular attributes reach the telemetry entry as a serializable copy', () => {
     telemetryExporter.registerTelemetryExporter({ name: 'sink', acceptsLogEntries: true, export() {} });
-    const circular = {};
+    const circular = { ok: 1 };
     circular.self = circular;
 
     withTrackedExecution((active) => {
         log.audit({ title: 'title', details: 'body', attributes: circular });
 
         const entries = telemetryExporter.takeTelemetryLogEntries(active.executionId);
-        assert.equal(entries[0].attributes, circular);
+        assert.notEqual(entries[0].attributes, circular);
+        assert.deepEqual(entries[0].attributes, { ok: 1, self: '[object Object]' });
+    });
+});
+
+test('the telemetry entry keeps the attributes as they were when the call was made', () => {
+    telemetryExporter.registerTelemetryExporter({ name: 'sink', acceptsLogEntries: true, export() {} });
+    const attributes = { record_id: 1, nested: { status: 'open' } };
+
+    withTrackedExecution((active) => {
+        log.audit({ title: 'title', details: 'body', attributes });
+        attributes.record_id = 2;
+        attributes.nested.status = 'closed';
+        attributes.added = true;
+
+        const entries = telemetryExporter.takeTelemetryLogEntries(active.executionId);
+        assert.deepEqual(entries[0].attributes, { record_id: 1, nested: { status: 'open' } });
     });
 });
 
