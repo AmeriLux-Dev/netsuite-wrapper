@@ -57,6 +57,8 @@ export interface TelemetryLogEntry {
     callChain: string;
     /** The enclosing function's arguments, snapshotted; absent when the function opted out. */
     functionArguments?: Record<string, unknown>;
+    /** The call's `attributes` option, forwarded as-is; absent when the call passed none. */
+    attributes?: Record<string, unknown>;
 }
 
 /** Everything one tracked script run produced. `mode` is the scope mode the run executed under. */
