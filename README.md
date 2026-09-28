@@ -132,6 +132,50 @@ Argument capture costs nothing until it is used: the build passes the parameter 
 
 An error thrown out of an instrumented function is recorded once, at the innermost function it left, with that function's arguments, in the root span's detail (`observedErrors`).
 
+#### Log attributes
+
+`log.*` calls take an optional `attributes` field alongside `title` and `details`:
+
+```ts
+import * as log from '@amerilux/netsuite-wrapper/log';
+
+log.error({
+    title: 'Order submission',
+    details: 'no source location',
+    attributes: { record_type: 'transferorder', record_id: 48812 },
+});
+```
+
+Only available on the options-object call; the string form (`log.audit(title, details)`) never carries attributes.
+
+A non-empty `attributes` object is forwarded as-is on the telemetry entry (`TelemetryLogEntry.attributes`) and, budget permitting, appended to the N/log detail as a versioned tail — one space, the marker `[[NSW_ATTR|1]]`, then `JSON.stringify(attributes)`:
+
+```
+[exec_m2x1_9k] [fn:submit::to-request] no source location [[NSW_ATTR|1]]{"record_type":"transferorder","record_id":48812}
+```
+
+A downstream log system can split on the marker to recover the attributes; `|1` is the tail's own version, independent of `[[NSW_CHUNK|…]]`. The tracker prefix is only present inside a tracked execution — either way the tail itself is unaffected.
+
+Budget rules, out of the same `MAX_CHUNK_DETAIL_LENGTH` chunking uses:
+
+- JSON over 1024 characters, or a prefix+tail that alone would exceed the limit: dropped from the detail in favor of a placeholder, `[[NSW_ATTR|1]]{"_dropped":true,"_size":<length>}`. The telemetry entry still gets the full object.
+- `chunkLogging: 'off'`: an over-budget line is cut to make room and the JSON gains `"_truncated":true`.
+- `chunkLogging: 'group'` / `'silent'`: a chunked message carries the tail on its first chunk only.
+
+Each key is sanitized on its own before serializing, so one bad value (a function, BigInt, throwing getter, circular structure) never drops the whole payload — it falls back to `String(value)`, or `'[unserializable]'`. Avoid `_dropped`, `_size`, and `_truncated` as attribute names; the wrapper writes those itself in the cases above.
+
+Treat attribute values like any other log content: no secrets, tokens, or personal data.
+
+Attribute tailing is **on by default**. Turn it off through `netsuite-wrapper.config.js`:
+
+```js
+module.exports = {
+    logAttributeTail: false,
+};
+```
+
+With it off, `attributes` still reaches exporters; nothing is appended to the N/log detail. Toggle it directly via `log.setLogAttributeTailEnabled(false)` / `log.isLogAttributeTailEnabled()` from `@amerilux/netsuite-wrapper/log`.
+
 ### Exporters
 
 `recordExport` and `httpsExport` register the two bundled exporters from the generated bootstrap. A project that needs another destination, or a payload shape the `format` hook of `createHttpsExporter` cannot express through config, registers its own from a module listed in `bootstrapModules`:

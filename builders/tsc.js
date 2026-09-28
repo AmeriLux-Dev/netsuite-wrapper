@@ -15,6 +15,7 @@ const DEFAULT_WRAPPER_SUBDIR = 'netsuite-wrapper';
 const AUTO_BOOTSTRAP_FILE_NAME = 'bootstrap.js';
 const TRACE_LOG_BOOTSTRAP_FILE_NAME = 'trace-log-bootstrap.js';
 const CHUNK_LOG_BOOTSTRAP_FILE_NAME = 'chunk-log-bootstrap.js';
+const LOG_ATTRIBUTE_TAIL_BOOTSTRAP_FILE_NAME = 'log-attribute-tail-bootstrap.js';
 const DEFAULT_INSTRUMENTATION_SOURCE = 'tsc-amd-auto';
 const overrideModules = new Set(listOverrideSpecifiers(path.resolve(__dirname, '..')));
 
@@ -241,6 +242,14 @@ function createAmdChunkLogBootstrapSource(chunkLogging) {
     ].join('\n');
 }
 
+function createAmdLogAttributeTailBootstrapSource() {
+    return [
+        `define([${JSON.stringify('./log')}], function (logModule) {`,
+        '    logModule.setLogAttributeTailEnabled(false);',
+        '});',
+    ].join('\n');
+}
+
 function resolveBootstrapFiles(resolvedOptions, outDir, wrapperOutputDir, rootDir) {
     const bootstrapFiles = [];
     const defaultPerformanceTrackerModule = `${resolvedOptions.packageName || DEFAULT_PACKAGE_NAME}/performance-tracker`;
@@ -255,6 +264,12 @@ function resolveBootstrapFiles(resolvedOptions, outDir, wrapperOutputDir, rootDi
         const chunkBootstrapFile = path.join(wrapperOutputDir, CHUNK_LOG_BOOTSTRAP_FILE_NAME);
         fs.writeFileSync(chunkBootstrapFile, createAmdChunkLogBootstrapSource(resolvedOptions.chunkLogging), 'utf8');
         bootstrapFiles.push(chunkBootstrapFile);
+    }
+
+    if (resolvedOptions.logAttributeTail === false) {
+        const logAttributeTailBootstrapFile = path.join(wrapperOutputDir, LOG_ATTRIBUTE_TAIL_BOOTSTRAP_FILE_NAME);
+        fs.writeFileSync(logAttributeTailBootstrapFile, createAmdLogAttributeTailBootstrapSource(), 'utf8');
+        bootstrapFiles.push(logAttributeTailBootstrapFile);
     }
 
     if (resolvedOptions.telemetryBootstrap) {

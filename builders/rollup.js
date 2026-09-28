@@ -23,6 +23,8 @@ const TRACE_LOG_BOOTSTRAP_ID = 'virtual:netsuite-wrapper:trace-log-bootstrap';
 const RESOLVED_TRACE_LOG_BOOTSTRAP_ID = '\0netsuite-wrapper:trace-log-bootstrap';
 const CHUNK_LOG_BOOTSTRAP_ID = 'virtual:netsuite-wrapper:chunk-log-bootstrap';
 const RESOLVED_CHUNK_LOG_BOOTSTRAP_ID = '\0netsuite-wrapper:chunk-log-bootstrap';
+const LOG_ATTRIBUTE_TAIL_BOOTSTRAP_ID = 'virtual:netsuite-wrapper:log-attribute-tail-bootstrap';
+const RESOLVED_LOG_ATTRIBUTE_TAIL_BOOTSTRAP_ID = '\0netsuite-wrapper:log-attribute-tail-bootstrap';
 const LOG_MODULE_ID = 'virtual:netsuite-wrapper:log-module';
 const TELEMETRY_EXPORTER_MODULE_ID = 'virtual:netsuite-wrapper:telemetry-exporter-module';
 const RECORD_EXPORTER_MODULE_ID = 'virtual:netsuite-wrapper:record-exporter-module';
@@ -143,6 +145,10 @@ function createBootstrapImportLines(resolvedOptions) {
         imports.push(`import ${JSON.stringify(CHUNK_LOG_BOOTSTRAP_ID)};`);
     }
 
+    if (resolvedOptions.logAttributeTail === false) {
+        imports.push(`import ${JSON.stringify(LOG_ATTRIBUTE_TAIL_BOOTSTRAP_ID)};`);
+    }
+
     if (resolvedOptions.telemetryBootstrap) {
         imports.push(`import ${JSON.stringify(AUTO_BOOTSTRAP_ID)};`);
     }
@@ -181,6 +187,14 @@ function createChunkLogBootstrapModuleSource(chunkLogging) {
     return [
         `import { setChunkLogMode } from ${JSON.stringify(LOG_MODULE_ID)};`,
         `setChunkLogMode(${JSON.stringify(chunkLogging)});`,
+        'export {};',
+    ].join('\n');
+}
+
+function createLogAttributeTailBootstrapModuleSource() {
+    return [
+        `import { setLogAttributeTailEnabled } from ${JSON.stringify(LOG_MODULE_ID)};`,
+        'setLogAttributeTailEnabled(false);',
         'export {};',
     ].join('\n');
 }
@@ -271,6 +285,10 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
                 return RESOLVED_CHUNK_LOG_BOOTSTRAP_ID;
             }
 
+            if (source === LOG_ATTRIBUTE_TAIL_BOOTSTRAP_ID) {
+                return RESOLVED_LOG_ATTRIBUTE_TAIL_BOOTSTRAP_ID;
+            }
+
             if (source === TELEMETRY_MODULE_ID) {
                 return createWrapperModuleRequest('telemetry', {
                     packageName,
@@ -331,6 +349,10 @@ function createNetSuiteWrapperRollupPlugin(options = {}) {
 
             if (id === RESOLVED_CHUNK_LOG_BOOTSTRAP_ID) {
                 return createChunkLogBootstrapModuleSource(resolvedOptions.chunkLogging);
+            }
+
+            if (id === RESOLVED_LOG_ATTRIBUTE_TAIL_BOOTSTRAP_ID) {
+                return createLogAttributeTailBootstrapModuleSource();
             }
 
             if (id === RESOLVED_AUTO_BOOTSTRAP_ID) {

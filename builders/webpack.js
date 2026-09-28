@@ -28,6 +28,7 @@ const INTERNAL_CHUNK_LOG_BOOTSTRAP_MODULES = {
     silent: path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-silent.js'),
     off: path.join(__dirname, '..', 'lib', 'chunk-log-bootstrap-off.js'),
 };
+const INTERNAL_LOG_ATTRIBUTE_TAIL_BOOTSTRAP_MODULE = path.join(__dirname, '..', 'lib', 'log-attribute-tail-bootstrap-off.js');
 
 function normalizeRules(rules) {
     if (!rules) {
@@ -92,6 +93,10 @@ function createNetSuiteWrapperWebpackEntries(entries, options = {}) {
     const chunkLogBootstrapModule = INTERNAL_CHUNK_LOG_BOOTSTRAP_MODULES[resolvedOptions.chunkLogging];
     if (chunkLogBootstrapModule) {
         bootstrapModules.push(chunkLogBootstrapModule);
+    }
+
+    if (resolvedOptions.logAttributeTail === false) {
+        bootstrapModules.push(INTERNAL_LOG_ATTRIBUTE_TAIL_BOOTSTRAP_MODULE);
     }
 
     if (resolvedOptions.telemetryBootstrap) {
