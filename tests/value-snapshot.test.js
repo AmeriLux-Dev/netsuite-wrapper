@@ -48,6 +48,19 @@ test('anything with getValue (a NetSuite record or search result) collapses to t
     assert.deepEqual(snapshotValue(result), { recordType: 'employee', id: '7' });
 });
 
+test('a property that throws when read becomes a marker and the rest of the snapshot survives', () => {
+    const value = {
+        ok: 1,
+        get broken() {
+            throw new Error('getter failed');
+        },
+        list: [1, new Proxy({}, { ownKeys() { throw new Error('no keys'); } })],
+    };
+
+    assert.deepEqual(snapshotValue(value, { maxDepth: 3 }), { ok: 1, broken: '[unreadable]', list: [1, '[unreadable]'] });
+    assert.equal(snapshotValue(new Proxy({}, { ownKeys() { throw new Error('no keys'); } })), '[unreadable]');
+});
+
 test('the whole snapshot stays under the total budget by tightening the limits', () => {
     const value = { items: Array.from({ length: 5 }, () => ({ text: 'y'.repeat(200), more: 'z'.repeat(200) })) };
     const snapshot = snapshotValue(value, { maxTotalLength: 600 });

@@ -96,13 +96,20 @@ function snapshotValueAtDepth(value: unknown, depth: number, options: Required<V
         }
 
         seen.add(objectValue);
-        const items = objectValue.slice(0, options.maxArrayLength).map((item) => snapshotValueAtDepth(item, depth + 1, options, seen));
-        seen.delete(objectValue);
-        if (objectValue.length > options.maxArrayLength) {
-            items.push(`… ${objectValue.length - options.maxArrayLength} more`);
-        }
+        try {
+            const items: unknown[] = [];
+            const keptLength = Math.min(objectValue.length, options.maxArrayLength);
+            for (let index = 0; index < keptLength; index += 1) {
+                items.push(snapshotPropertyAtDepth(objectValue, index, depth + 1, options, seen));
+            }
+            if (objectValue.length > options.maxArrayLength) {
+                items.push(`… ${objectValue.length - options.maxArrayLength} more`);
+            }
 
-        return items;
+            return items;
+        } finally {
+            seen.delete(objectValue);
+        }
     }
 
     if (depth >= options.maxDepth) {
@@ -110,17 +117,38 @@ function snapshotValueAtDepth(value: unknown, depth: number, options: Required<V
     }
 
     seen.add(objectValue);
-    const snapshot: Record<string, unknown> = {};
-    const keys = Object.keys(objectValue);
-    keys.slice(0, options.maxObjectKeys).forEach((key) => {
-        snapshot[key] = snapshotValueAtDepth((objectValue as Record<string, unknown>)[key], depth + 1, options, seen);
-    });
-    seen.delete(objectValue);
-    if (keys.length > options.maxObjectKeys) {
-        snapshot['…'] = `${keys.length - options.maxObjectKeys} more keys`;
-    }
+    try {
+        const snapshot: Record<string, unknown> = {};
+        const keys = Object.keys(objectValue);
+        keys.slice(0, options.maxObjectKeys).forEach((key) => {
+            snapshot[key] = snapshotPropertyAtDepth(objectValue, key, depth + 1, options, seen);
+        });
+        if (keys.length > options.maxObjectKeys) {
+            snapshot['…'] = `${keys.length - options.maxObjectKeys} more keys`;
+        }
 
-    return snapshot;
+        return snapshot;
+    } finally {
+        seen.delete(objectValue);
+    }
+}
+
+// A getter, a Proxy trap or a host object can throw when it is read. The value it guards becomes a
+// marker, so one unreadable property never costs the rest of the snapshot.
+function snapshotPropertyAtDepth(owner: object, key: string | number, depth: number, options: Required<ValueSnapshotOptions>, seen: Set<object>): unknown {
+    try {
+        return snapshotValueAtDepth((owner as Record<string | number, unknown>)[key], depth, options, seen);
+    } catch (_readError) {
+        return '[unreadable]';
+    }
+}
+
+function snapshotRootValue(value: unknown, options: Required<ValueSnapshotOptions>): unknown {
+    try {
+        return snapshotValueAtDepth(value, 0, options, new Set<object>());
+    } catch (_readError) {
+        return '[unreadable]';
+    }
 }
 
 function measureJson(value: unknown): number {
@@ -145,16 +173,17 @@ function tightenOptions(options: Required<ValueSnapshotOptions>): Required<Value
 /**
  * A bounded, JSON-safe picture of `value`. Strings are cut, arrays and objects are trimmed to a few
  * entries and a couple of levels, NetSuite records collapse to `{ recordType, id }`, circular
- * references become a marker. When the result is still larger than `maxTotalLength` the limits are
- * halved and the value re-snapshotted, so the output size is predictable whatever goes in.
+ * references and properties that throw when read become markers. When the result is still larger
+ * than `maxTotalLength` the limits are halved and the value re-snapshotted, so the output size is
+ * predictable whatever goes in.
  */
 export function snapshotValue(value: unknown, options?: ValueSnapshotOptions): unknown {
     let currentOptions = resolveOptions(options);
-    let snapshot = snapshotValueAtDepth(value, 0, currentOptions, new Set<object>());
+    let snapshot = snapshotRootValue(value, currentOptions);
 
     for (let attempt = 0; attempt < 3 && measureJson(snapshot) > currentOptions.maxTotalLength; attempt += 1) {
         currentOptions = tightenOptions(currentOptions);
-        snapshot = snapshotValueAtDepth(value, 0, currentOptions, new Set<object>());
+        snapshot = snapshotRootValue(value, currentOptions);
     }
 
     if (measureJson(snapshot) > currentOptions.maxTotalLength) {

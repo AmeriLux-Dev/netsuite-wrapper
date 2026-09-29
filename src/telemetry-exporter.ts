@@ -45,7 +45,11 @@ export interface TelemetrySpan {
 export interface TelemetryLogEntry {
     level: TelemetryLogLevel;
     title: string;
-    /** The details as passed to the log call, not the chunked string written to N/log. */
+    /**
+     * A JSON-safe copy of the details, taken when the log call was made (not the chunked string
+     * written to N/log). Details longer than 8000 characters are replaced by
+     * `{ _dropped, _reason, _size, _logReference }`, where `_logReference` finds the full text in N/log.
+     */
     details: unknown;
     timestamp: string;
     executionId: string;
@@ -57,7 +61,10 @@ export interface TelemetryLogEntry {
     callChain: string;
     /** The enclosing function's arguments, snapshotted; absent when the function opted out. */
     functionArguments?: Record<string, unknown>;
-    /** The call's `attributes` option, forwarded as-is; absent when the call passed none. */
+    /**
+     * A JSON-safe copy of the call's `attributes` option, taken when the call was made; absent when
+     * the call passed none. Attributes longer than 4000 characters are replaced by `{ _dropped, _reason, _size }`.
+     */
     attributes?: Record<string, unknown>;
 }
 
@@ -84,6 +91,7 @@ const MAX_LOG_ENTRIES_PER_EXECUTION = 500;
 const registeredExporters: TelemetryExporter[] = [];
 const pendingLogEntriesByExecution = new Map<string, TelemetryLogEntry[]>();
 const droppedLogEntryCountByExecution = new Map<string, number>();
+const firstDroppedLogEntryTimestampByExecution = new Map<string, string>();
 
 function getNsLog(): typeof import('N/log') {
     return require<typeof import('N/log')>('N/log');
@@ -132,27 +140,46 @@ export function enqueueTelemetryLogEntry(executionId: string, entry: TelemetryLo
 
     if (queue.length >= MAX_LOG_ENTRIES_PER_EXECUTION) {
         droppedLogEntryCountByExecution.set(executionId, (droppedLogEntryCountByExecution.get(executionId) || 0) + 1);
+        if (entry.timestamp && !firstDroppedLogEntryTimestampByExecution.has(executionId)) {
+            firstDroppedLogEntryTimestampByExecution.set(executionId, entry.timestamp);
+        }
         return;
     }
 
     queue.push(entry);
 }
 
-/** Removes and returns the run's queued log entries, with a closing entry when some were dropped. */
+/** How many log entries the run has queued or dropped so far; the next entry is this count plus one. */
+export function countTelemetryLogEntriesForExecution(executionId: string): number {
+    return (pendingLogEntriesByExecution.get(executionId)?.length || 0) + (droppedLogEntryCountByExecution.get(executionId) || 0);
+}
+
+/**
+ * Removes and returns the run's queued log entries, with a closing entry when some were dropped.
+ * Dropped entries still reached N/log: the closing entry's `firstDroppedAt` is where they start.
+ */
 export function takeTelemetryLogEntries(executionId: string): TelemetryLogEntry[] {
     const queue = pendingLogEntriesByExecution.get(executionId) || [];
     pendingLogEntriesByExecution.delete(executionId);
 
     const droppedCount = droppedLogEntryCountByExecution.get(executionId) || 0;
     droppedLogEntryCountByExecution.delete(executionId);
+    const firstDroppedAt = firstDroppedLogEntryTimestampByExecution.get(executionId);
+    firstDroppedLogEntryTimestampByExecution.delete(executionId);
     if (droppedCount > 0 && queue.length > 0) {
         const lastEntry = queue[queue.length - 1];
         queue.push({
             ...lastEntry,
             level: 'audit',
             title: 'netsuite-wrapper log entries dropped',
-            details: { droppedCount, keptCount: queue.length, limit: MAX_LOG_ENTRIES_PER_EXECUTION },
+            details: {
+                droppedCount,
+                keptCount: queue.length,
+                limit: MAX_LOG_ENTRIES_PER_EXECUTION,
+                ...(firstDroppedAt ? { firstDroppedAt } : {}),
+            },
             functionArguments: undefined,
+            attributes: undefined,
         });
     }
 
@@ -162,6 +189,7 @@ export function takeTelemetryLogEntries(executionId: string): TelemetryLogEntry[
 export function discardTelemetryLogEntries(executionId: string): void {
     pendingLogEntriesByExecution.delete(executionId);
     droppedLogEntryCountByExecution.delete(executionId);
+    firstDroppedLogEntryTimestampByExecution.delete(executionId);
 }
 
 /** Hands the batch to every exporter. One exporter failing never stops the others or the script. */

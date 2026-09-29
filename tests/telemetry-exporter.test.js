@@ -97,3 +97,26 @@ test('a run that logs more than the cap keeps the first entries and reports the 
     assert.equal(entries[500].title, 'netsuite-wrapper log entries dropped');
     assert.deepEqual(entries[500].details, { droppedCount: 5, keptCount: 500, limit: 500 });
 });
+
+test('the dropped-entries note says where dropping started and carries none of the last entry\'s own data', () => {
+    for (let index = 0; index < 503; index += 1) {
+        telemetryExporter.enqueueTelemetryLogEntry('exec_capped', {
+            level: 'debug',
+            title: `line ${index}`,
+            executionId: 'exec_capped',
+            timestamp: `2026-09-29T10:00:00.${String(index).padStart(3, '0')}Z`,
+            attributes: { record_id: 9000 + index },
+            functionArguments: { id: index },
+        });
+    }
+
+    assert.equal(telemetryExporter.countTelemetryLogEntriesForExecution('exec_capped'), 503);
+
+    const note = telemetryExporter.takeTelemetryLogEntries('exec_capped')[500];
+    assert.equal(note.title, 'netsuite-wrapper log entries dropped');
+    assert.equal(note.executionId, 'exec_capped');
+    assert.deepEqual(note.details, { droppedCount: 3, keptCount: 500, limit: 500, firstDroppedAt: '2026-09-29T10:00:00.500Z' });
+    assert.equal(note.attributes, undefined);
+    assert.equal(note.functionArguments, undefined);
+    assert.equal(telemetryExporter.countTelemetryLogEntriesForExecution('exec_capped'), 0);
+});

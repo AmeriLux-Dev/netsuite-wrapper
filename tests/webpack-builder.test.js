@@ -726,6 +726,100 @@ test('off chunk-log bootstrap sets off mode through a real log module file', () 
     assert.match(bootstrapSource, /setChunkLogMode\(['"]off['"]\)/);
 });
 
+test('log attribute tail defaults to on, and only a literal false turns it off', () => {
+    assert.equal(loadNetSuiteWrapperConfig({}).logAttributeTail, true);
+    assert.equal(loadNetSuiteWrapperConfig({ logAttributeTail: false }).logAttributeTail, false);
+    assert.equal(loadNetSuiteWrapperConfig({ logAttributeTail: 'false' }).logAttributeTail, true);
+    assert.equal(loadNetSuiteWrapperConfig({ logAttributeTail: 0 }).logAttributeTail, true);
+});
+
+test('prepends the log-attribute-tail bootstrap to webpack entries only when the tail is off', () => {
+    const offBootstrapPath = path.join(__dirname, '..', 'lib', 'log-attribute-tail-bootstrap-off.js');
+
+    assert.deepEqual(
+        createNetSuiteWrapperWebpackEntries('./src/index.ts', { telemetryBootstrap: false, logAttributeTail: false }),
+        [offBootstrapPath, './src/index.ts'],
+    );
+    assert.equal(
+        createNetSuiteWrapperWebpackEntries('./src/index.ts', { telemetryBootstrap: false }),
+        './src/index.ts',
+    );
+});
+
+test('rollup prepends a log-attribute-tail bootstrap import to entries when the tail is off', () => {
+    const plugin = builderRollup.createNetSuiteWrapperRollupPlugin({
+        telemetryBootstrap: false,
+        logAttributeTail: false,
+        instrumentation: false,
+    });
+    const entryId = path.resolve('./src/index.ts');
+
+    plugin.options({ input: entryId });
+    const transformed = plugin.transform('export const value = 1;', entryId);
+
+    assert.ok(transformed, 'expected the entry to be rewritten with a bootstrap import');
+    assert.match(transformed.code, /import "virtual:netsuite-wrapper:log-attribute-tail-bootstrap";/);
+});
+
+test('rollup resolves and loads a log-attribute-tail bootstrap that turns the tail off', () => {
+    const plugin = builderRollup.createNetSuiteWrapperRollupPlugin({
+        telemetryBootstrap: false,
+        logAttributeTail: false,
+    });
+
+    const resolvedBootstrapId = plugin.resolveId('virtual:netsuite-wrapper:log-attribute-tail-bootstrap');
+    const bootstrapSource = plugin.load(resolvedBootstrapId);
+
+    assert.match(bootstrapSource, /setLogAttributeTailEnabled\(false\)/);
+});
+
+test('writes a tsc log-attribute-tail bootstrap only when the tail is off', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'netsuite-wrapper-attribute-tail-'));
+    const runtimeDir = path.join(tempRoot, 'runtime');
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(path.join(runtimeDir, 'log.js'), 'define([], function () { return { setLogAttributeTailEnabled: function () {} }; });');
+
+    const rewriteInto = (outDirName, extraOptions) => {
+        const outDir = path.join(tempRoot, outDirName);
+        fs.mkdirSync(outDir, { recursive: true });
+        fs.writeFileSync(path.join(outDir, 'index.js'), 'define([], function () { function main() { return 1; } return { main: main }; });');
+        rewriteNetSuiteWrapperTscOutput({
+            outDir,
+            runtimeDir,
+            wrapperSubdir: 'netsuite-wrapper',
+            telemetryBootstrap: false,
+            instrumentation: false,
+            ...extraOptions,
+        });
+        return path.join(outDir, 'netsuite-wrapper', 'log-attribute-tail-bootstrap.js');
+    };
+
+    const offBootstrapFile = rewriteInto('dist-off', { logAttributeTail: false });
+    assert.ok(fs.existsSync(offBootstrapFile), 'expected a log-attribute-tail bootstrap file to be written');
+    assert.match(fs.readFileSync(offBootstrapFile, 'utf8'), /setLogAttributeTailEnabled\(false\)/);
+
+    const defaultBootstrapFile = rewriteInto('dist-default', {});
+    assert.equal(fs.existsSync(defaultBootstrapFile), false, 'no bootstrap file is needed while the tail is on');
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('off log-attribute-tail bootstrap turns the tail off through a real log module file', () => {
+    const bootstrapPath = path.join(__dirname, '..', 'lib', 'log-attribute-tail-bootstrap-off.js');
+    const bootstrapSource = fs.readFileSync(bootstrapPath, 'utf8');
+    const match = bootstrapSource.match(/require\((['"])(\.[^'"]*log\.js)\1\)/);
+
+    assert.ok(match, 'expected log-attribute-tail-bootstrap-off.js to require log.js by relative path');
+
+    const resolvedLogPath = path.resolve(path.dirname(bootstrapPath), match[2]);
+    assert.ok(
+        fs.existsSync(resolvedLogPath),
+        `log require resolves to a missing file: ${resolvedLogPath}`,
+    );
+
+    assert.match(bootstrapSource, /setLogAttributeTailEnabled\(false\)/);
+});
+
 test('legacy root entrypoints re-export the builder implementations', () => {
     assert.equal(legacyRollup, builderRollup);
     assert.equal(legacyWebpack, builderWebpack);

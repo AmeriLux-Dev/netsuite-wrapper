@@ -126,7 +126,19 @@ With `scopeKey` set, every file whose header carries a supported `@NScriptType` 
 
 ### What a log line carries
 
-Every wrapped `log.*` call still writes to `N/log` as before (see the tag and chunking notes below). Inside a tracked run it also becomes a structured entry for exporters that accept log entries: level, title, the details as passed (not the chunked string), timestamp, execution and flow ids, script and deployment ids, the enclosing function and module, the call chain of instrumented functions (`post -> roles -> loadUser`) and the enclosing function's **arguments**, snapshotted by parameter name.
+Every wrapped `log.*` call still writes to `N/log` as before (see the tag and chunking notes below). Inside a tracked run it also becomes a structured entry for exporters that accept log entries: level, title, a copy of the details (not the chunked string), timestamp, execution and flow ids, script and deployment ids, the enclosing function and module, the call chain of instrumented functions (`post -> roles -> loadUser`) and the enclosing function's **arguments**, snapshotted by parameter name.
+
+Entries are exported when the run ends, so the details are copied when the call is made: changing the object afterwards does not change what was logged. The copy is what `JSON.stringify` makes of the details, the same text written to N/log, with two exceptions: an `Error` keeps its name and message (`{ errorName, message }`) instead of JSON's `{}`, and details JSON cannot encode at all (a circular structure, a BigInt) are snapshotted with circular references marked, so one bad value never costs the run its export.
+
+Details over 8000 characters are not held for export. The entry carries a pointer to the N/log rows instead, and only those rows get a `[log:N]` tag after the execution id:
+
+```
+details: { "_dropped": true, "_reason": "too_large", "_size": 48210, "_logReference": "[exec_m2x1_9k] [log:7]" }
+
+[[NSW_CHUNK|…|1/13]] [exec_m2x1_9k] [log:7] [fn:syncOrders::order-sync] {"lines":[…
+```
+
+Searching the Script Execution Log details for the `_logReference` text finds every row of that call. The rows exist as long as NetSuite keeps the log, and only when the deployment's log level let that call through; with `chunkLogging: 'off'` the single row is cut at NetSuite's limit.
 
 Argument capture costs nothing until it is used: the build passes the parameter values to the function-context helper as references, and they are serialised only when a log call inside the function asks for them or when the function throws. The snapshot is bounded (strings cut at 200 characters, five array items, twenty keys, two levels, two thousand characters in all; a NetSuite record collapses to its type and id). A function that receives credentials or personal data opts out with `@ptrk-ignore-arguments` in the comment above it; the same tag at the top of a file opts out every function in that file.
 
@@ -148,21 +160,21 @@ log.error({
 
 Only available on the options-object call; the string form (`log.audit(title, details)`) never carries attributes.
 
-A non-empty `attributes` object is copied at the time of the call onto the telemetry entry (`TelemetryLogEntry.attributes`), so changing the object afterwards does not change what was logged, and, budget permitting, appended to the N/log detail as a versioned tail — one space, the marker `[[NSW_ATTR|1]]`, then `JSON.stringify(attributes)`:
+A non-empty `attributes` object is copied at the time of the call onto the telemetry entry (`TelemetryLogEntry.attributes`), so changing the object afterwards does not change what was logged, and, budget permitting, appended to the N/log detail as a versioned tail — one space, the marker `[[NSW_ATTR|1]]`, then the attributes as JSON:
 
 ```
 [exec_m2x1_9k] [fn:submit::to-request] no source location [[NSW_ATTR|1]]{"record_type":"transferorder","record_id":48812}
 ```
 
-A downstream log system can split on the marker to recover the attributes; `|1` is the tail's own version, independent of `[[NSW_CHUNK|…]]`. The tracker prefix is only present inside a tracked execution — either way the tail itself is unaffected.
+A downstream log system recovers the attributes by splitting on the **last** marker in the line and parsing the JSON after it; `|1` is the tail's own version, independent of `[[NSW_CHUNK|…]]`. The message itself may quote the marker, but the JSON never contains it: inside the JSON, `[[NSW_ATTR` is written as `[[NSW_ATTR`, which `JSON.parse` turns back into the original text. The tracker prefix is only present inside a tracked execution — either way the tail itself is unaffected.
 
 Budget rules, out of the same `MAX_CHUNK_DETAIL_LENGTH` chunking uses:
 
-- JSON over 1024 characters, or a prefix+tail that alone would exceed the limit: dropped from the detail in favor of a placeholder, `[[NSW_ATTR|1]]{"_dropped":true,"_size":<length>}`. The telemetry entry still gets the full object.
-- `chunkLogging: 'off'`: an over-budget line is cut to make room and the JSON gains `"_truncated":true`.
+- JSON over 1024 characters, or a prefix+tail that alone would exceed the limit: dropped from the detail in favor of a placeholder, `[[NSW_ATTR|1]]{"_dropped":true,"_size":<length>}`. The telemetry entry still gets the copy, up to 4000 characters of JSON; beyond that it gets `{ "_dropped": true, "_reason": "too_large", "_size": <length> }`.
+- `chunkLogging: 'off'`: an over-budget line is cut to make room and the JSON (or the placeholder) gains `"_truncated":true`.
 - `chunkLogging: 'group'` / `'silent'`: a chunked message carries the tail on its first chunk only.
 
-Each key is sanitized on its own before serializing, so one bad value (a function, BigInt, throwing getter, circular structure) never drops the whole payload — it falls back to `String(value)`, or `'[unserializable]'`. Avoid `_dropped`, `_size`, and `_truncated` as attribute names; the wrapper writes those itself in the cases above.
+Each key is sanitized on its own before serializing, so one bad value (a function, BigInt, throwing getter, circular structure) never drops the whole payload — it falls back to `String(value)`, or `'[unserializable]'`. An `Error` value keeps its name and message as `{ errorName, message }`. The tail and the telemetry entry are built from the same JSON, so they always agree. Avoid `_dropped`, `_reason`, `_size`, and `_truncated` as attribute names; the wrapper writes those itself in the cases above.
 
 Treat attribute values like any other log content: no secrets, tokens, or personal data.
 
@@ -230,7 +242,7 @@ When enabled, the builder injects a small bootstrap that calls `setTraceLogEnabl
 
 ### Log tracker tags and the message title
 
-Every wrapped `log.*` call records tracker context — the active execution id and function — as tags. As of this release those tags are written to the **start of the message detail** (e.g. `[exec_…] [fn:name::module] your detail`) and the **title is left untouched**. Earlier releases prefixed the title instead; consumers that parsed the tags out of the log title must read them from the detail. Short messages carry the tags inline; chunked messages repeat the tags at the start of every chunk (after the chunk marker) so each chunk stays attributable.
+Every wrapped `log.*` call records tracker context — the active execution id and function — as tags. As of this release those tags are written to the **start of the message detail** (e.g. `[exec_…] [fn:name::module] your detail`) and the **title is left untouched**. Earlier releases prefixed the title instead; consumers that parsed the tags out of the log title must read them from the detail. Short messages carry the tags inline; chunked messages repeat the tags at the start of every chunk (after the chunk marker) so each chunk stays attributable. A call whose details were too large to export also carries a `[log:N]` tag after the execution id, the target of its exporter entry's `_logReference` (see What a log line carries); no other call does.
 
 ### Chunk logging
 
@@ -244,7 +256,7 @@ module.exports = {
 
 - `group` (default): split long details and add the `[[NSW_CHUNK|…]]` marker so viewers can re-assemble them.
 - `silent`: still split long details across entries, but omit the marker (no extra text; entries are not re-assembled).
-- `off`: never split — emit the detail in a single call and let NetSuite truncate it.
+- `off`: never split — emit the detail in a single call and let NetSuite truncate it. A call with `attributes` is the exception: the wrapper cuts the message itself so the attribute tail stays on the line (see Log attributes).
 
 For any non-`group` mode the builder injects a bootstrap that calls `setChunkLogMode('silent' | 'off')` at runtime. You can also set it directly via `log.setChunkLogMode('off')` / `log.getChunkLogMode()` from `@amerilux/netsuite-wrapper/log`.
 
