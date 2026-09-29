@@ -6,6 +6,7 @@ const httpsCalls = [];
 const secureStrings = [];
 const nsLogCalls = [];
 let responseCode = 202;
+let postError = null;
 
 const originalModuleLoad = Module._load;
 Module._load = function patchedLoad(request) {
@@ -13,6 +14,9 @@ Module._load = function patchedLoad(request) {
         return {
             post(options) {
                 httpsCalls.push(options);
+                if (postError) {
+                    throw postError;
+                }
                 return { code: responseCode, body: '' };
             },
             createSecureString(options) {
@@ -58,6 +62,7 @@ test.beforeEach(() => {
     secureStrings.length = 0;
     nsLogCalls.length = 0;
     responseCode = 202;
+    postError = null;
 });
 
 test('requires a url', () => {
@@ -130,4 +135,31 @@ test('a rejected request is logged once and does not throw', () => {
     assert.equal(nsLogCalls.length, 1);
     assert.equal(nsLogCalls[0].title, 'netsuite-wrapper https export rejected');
     assert.match(nsLogCalls[0].details, /"code":401/);
+});
+
+test('a request that throws is logged once with the batch counts and does not throw', () => {
+    postError = new Error('connection refused');
+    const exporter = createHttpsExporter({ url: 'https://collector.example.com/ingest' });
+
+    assert.doesNotThrow(() => exporter.export(makeBatch()));
+
+    assert.equal(httpsCalls.length, 1);
+    assert.equal(nsLogCalls.length, 1);
+    assert.equal(nsLogCalls[0].title, 'netsuite-wrapper https export failed');
+    assert.match(nsLogCalls[0].details, /"message":"connection refused"/);
+    assert.match(nsLogCalls[0].details, /"logCount":/);
+});
+
+test('a format hook that throws is reported the same way and the request is not sent', () => {
+    const exporter = createHttpsExporter({
+        url: 'https://collector.example.com/ingest',
+        format() {
+            throw new Error('bad format');
+        },
+    });
+
+    assert.doesNotThrow(() => exporter.export(makeBatch()));
+
+    assert.equal(httpsCalls.length, 0);
+    assert.equal(nsLogCalls[0].title, 'netsuite-wrapper https export failed');
 });

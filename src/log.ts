@@ -140,6 +140,7 @@ function forwardLogEntry(method: LogMethodName, normalizedCall: LogCallOptions, 
         // using the raw top of the stack as before.
         const preferredFunctionContext = functionContext.getPreferredActiveFunctionContext() || activeFunctionContext;
         const functionArguments = functionContext.snapshotActiveFunctionArguments();
+        const attributesSnapshot = hasLogAttributes(normalizedCall.attributes) ? snapshotLogAttributes(normalizedCall.attributes) : null;
         telemetryExporter.enqueueTelemetryLogEntry(activeExecution.executionId, {
             level: method,
             title: normalizedCall.title,
@@ -153,7 +154,7 @@ function forwardLogEntry(method: LogMethodName, normalizedCall: LogCallOptions, 
             functionModulePath: normalizeTitle(preferredFunctionContext?.modulePath || preferredFunctionContext?.filePath),
             callChain: functionContext.getFunctionCallChainLabel(),
             ...(functionArguments ? { functionArguments } : {}),
-            ...(hasLogAttributes(normalizedCall.attributes) ? { attributes: normalizedCall.attributes } : {}),
+            ...(attributesSnapshot ? { attributes: attributesSnapshot } : {}),
         });
     } catch (error) {
         emitTraceLog('forwardLogEntry.error', {
@@ -265,6 +266,21 @@ function serializeLogAttributes(attributes: Record<string, unknown>): string | n
 
     try {
         return JSON.stringify(sanitized);
+    } catch (_error) {
+        return null;
+    }
+}
+
+// Entries are exported when the run ends, so the attributes are copied at the time of the call: a
+// caller that reuses and mutates its attributes object afterwards does not change what was logged.
+function snapshotLogAttributes(attributes: Record<string, unknown>): Record<string, unknown> | null {
+    const json = serializeLogAttributes(attributes);
+    if (json === null) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(json) as Record<string, unknown>;
     } catch (_error) {
         return null;
     }
